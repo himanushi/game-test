@@ -1,0 +1,16 @@
+[gd_scene load_steps=2 format=3 uid="uid://cqp3lb02khtj4"]
+
+[ext_resource type="Script" path="res://main.gd" id="1_1k2t3"]
+
+[node name="Main" type="Node2D"]
+script = ExtResource("1_1k2t3")
+
+[node name="Label" type="Label" parent="."]
+offset_left = 400.0
+offset_top = 300.0
+offset_right = 880.0
+offset_bottom = 400.0
+text = "Scribble LLM Game
+プロジェクト初期化完了！"
+horizontal_alignment = 1
+vertical_alignment = 1
