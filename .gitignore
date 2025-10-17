@@ -1,2 +1,4 @@
 addons/
 .godot/
+*/**/*.log
+*/**/*.gguf
