@@ -10,24 +10,51 @@
 
 このプロジェクトはlocal LLMを使用したゲーム開発の技術検証リポジトリです。
 
-## プロジェクトの目的
+## 技術スタック
 
-- **目的**: ローカルLLM機能をゲーム開発ワークフローに統合するための技術検証と実験
-- **ステータス**: 初期セットアップ段階 - リポジトリは現在開発初期段階
-- **開発方針**: 実験的/検証プロジェクトのため、迅速なプロトタイピングと明確な知見の文書化を優先
+### ゲームエンジン
+- **Godot 4.5.1** - 2D専用の機能が充実した軽量ゲームエンジン
+- 2D物理エンジン、TileMap、Sprite、アニメーション機能を活用
 
-## 開発における考慮事項
+### LLM統合
+- **llama.cpp** - クロスプラットフォーム対応のローカルLLM実行環境
+- **Godot LLM** ([github.com/Adriankhl/godot-llm](https://github.com/Adriankhl/godot-llm)) - GDExtensionプラグイン
+  - GGUF形式のモデルファイルをサポート
+  - 全プラットフォーム対応（Windows/Mac/Linux/Android）
+  - GPU加速対応（Vulkan/Metal/CPU）
 
-このリポジトリで作業する際は:
+## 開発環境セットアップ手順
 
-- 技術検証が主目的のため、迅速な実装と結果の文書化を重視
-- ローカルLLM統合がコアフォーカス - アーキテクチャ決定時にレイテンシ、モデルサイズ、推論要件を考慮
-- 技術的な決定やトレードオフは、特にLLM統合パターンに関して文書化すること
+### 1. Godot 4のインストール
 
-## 想定される構造
+```bash
+# Homebrewでインストール（Mac）
+brew install --cask godot
 
-プロジェクトの成長に伴い、以下のような構成を検討:
+# バージョン確認
+godot --version
+# 出力例: 4.5.1.stable.official.f62fdbde1
+```
 
-- **LLM統合層**: ローカルLLM操作の抽象化（モデル読み込み、推論、プロンプト管理）
-- **ゲームロジック**: LLM機能から分離されたコアゲームメカニクス
-- **実験結果**: ゲームコンテキストでローカルLLMを使用した際の成果・課題の文書化
+### 3. Godot LLMプラグインのセットアップ
+
+#### 方法1: Godot Asset Library（推奨）
+1. Godotエディタを開く
+2. 上部の「AssetLib」タブをクリック
+3. "Godot LLM"を検索
+4. ダウンロード＆インストール
+
+#### 方法2: 手動インストール
+1. [リリースページ](https://github.com/Adriankhl/godot-llm/releases)からダウンロード
+2. 解凍して`addons/godot_llm`フォルダを`godot-project/addons/`に配置
+3. GDExtensionが自動的に読み込まれる（Godot 4.2以降）
+
+### 4. GGUFモデルの準備
+
+テスト用に軽量なモデルを推奨：
+
+- **Qwen2.5-0.5B-Instruct** (~300MB) - 最小・最速
+- **TinyLlama-1.1B** (~600MB) - バランス型
+- **Llama-3.2-1B-Instruct** (~700MB) - Meta公式・高品質
+
+モデルは`godot-project/models/`に配置する。
