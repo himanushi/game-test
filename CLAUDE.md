@@ -68,9 +68,10 @@ godot --version
 ### コア機能
 
 1. **LLMベースのオブジェクト生成**
-   - ユーザーがテキスト入力（例：「消火器」「剣」「水」）
+   - ユーザーがテキスト入力（例：「dog」「fire」「water」）
    - LLMがJSON Schema形式で構造化されたデータを生成
-   - 色（色名enum）、形状のみの最小限の構造
+   - 色（3桁Hex: RGB）、頂点座標配列による自由な形状定義
+   - プリセット形状ではなく、LLMが各オブジェクトに応じた独自の形を生成
 
 2. **折り紙アニメーション**
    - スプライト生成時に回転・スケール・透明度アニメーション
@@ -93,7 +94,8 @@ godot --version
 
 - **JSON Schema機能**: LLM出力を完全に構造化
 - **決定的な出力**: temperature=0.0で再現性を確保
-- **最小限のスプライト**: 折り紙の世界観で幾何学的な形状のみ使用
+- **動的形状生成**: プリセットではなく頂点座標配列による自由な形状
+- **3桁Hex色**: コンパクトな色指定（F00=赤、0AF=青など）
 - **リアルタイム生成**: 生成中のJSONをリアルタイム表示
 
 ## ゲームの起動方法
@@ -140,16 +142,23 @@ llama.should_output_special = false
   "properties": {
     "color": {
       "type": "string",
-      "enum": ["赤", "青", "緑", "黄", "紫", "橙", "白", "黒", "灰"],
-      "description": "折り紙の色"
+      "pattern": "^[0-9A-Fa-f]{3}$",
+      "description": "折り紙の色（3桁Hex: RGB）"
     },
-    "shape": {
-      "type": "string",
-      "enum": ["三角", "四角", "五角形", "六角形", "円", "星"],
-      "description": "折り紙の形"
+    "vertices": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {"type": "number"},
+        "minItems": 2,
+        "maxItems": 2
+      },
+      "minItems": 3,
+      "maxItems": 10,
+      "description": "折り紙の形状を定義する頂点座標のリスト [[x1,y1], [x2,y2], ...]。座標は-100から100の範囲"
     }
   },
-  "required": ["color", "shape"]
+  "required": ["color", "vertices"]
 }
 ```
 
