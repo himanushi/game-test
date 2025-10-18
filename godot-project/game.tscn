@@ -1,0 +1,79 @@
+[gd_scene load_steps=2 format=3 uid="uid://bqx3vh8k4n3ky"]
+
+[ext_resource type="Script" path="res://game.gd" id="1_game"]
+
+[node name="Game" type="Node2D"]
+script = ExtResource("1_game")
+
+[node name="Background" type="ColorRect" parent="."]
+offset_right = 1280.0
+offset_bottom = 720.0
+color = Color(0.95, 0.93, 0.88, 1)
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="TitleLabel" type="Label" parent="UI"]
+offset_left = 100.0
+offset_top = 30.0
+offset_right = 1180.0
+offset_bottom = 80.0
+theme_override_colors/font_color = Color(0.3, 0.25, 0.2, 1)
+theme_override_font_sizes/font_size = 36
+text = "折り紙パズル - Origami LLM"
+horizontal_alignment = 1
+
+[node name="InputPanel" type="PanelContainer" parent="UI"]
+offset_left = 340.0
+offset_top = 100.0
+offset_right = 940.0
+offset_bottom = 200.0
+
+[node name="VBox" type="VBoxContainer" parent="UI/InputPanel"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="UI/InputPanel/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.3, 0.25, 0.2, 1)
+theme_override_font_sizes/font_size = 20
+text = "何を折りますか？"
+horizontal_alignment = 1
+
+[node name="HBox" type="HBoxContainer" parent="UI/InputPanel/VBox"]
+layout_mode = 2
+
+[node name="InputField" type="LineEdit" parent="UI/InputPanel/VBox/HBox"]
+custom_minimum_size = Vector2(400, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "例: 消火器、剣、水..."
+alignment = 1
+
+[node name="GenerateButton" type="Button" parent="UI/InputPanel/VBox/HBox"]
+custom_minimum_size = Vector2(120, 40)
+layout_mode = 2
+text = "折る！"
+
+[node name="StatusLabel" type="Label" parent="UI"]
+offset_left = 100.0
+offset_top = 220.0
+offset_right = 1180.0
+offset_bottom = 260.0
+theme_override_colors/font_color = Color(0.5, 0.4, 0.3, 1)
+theme_override_font_sizes/font_size = 18
+text = "オブジェクトを入力して「折る！」ボタンを押してください"
+horizontal_alignment = 1
+
+[node name="JsonDisplay" type="RichTextLabel" parent="UI"]
+offset_left = 100.0
+offset_top = 280.0
+offset_right = 500.0
+offset_bottom = 680.0
+theme_override_colors/default_color = Color(0.3, 0.25, 0.2, 1)
+theme_override_font_sizes/normal_font_size = 16
+bbcode_enabled = true
+text = "[b]生成されたJSON:[/b]
+
+ここに表示されます"
+
+[node name="OrigamiContainer" type="Node2D" parent="."]
+position = Vector2(800, 400)
