@@ -1,6 +1,9 @@
-[gd_scene load_steps=2 format=3 uid="uid://bqx3vh8k4n3ky"]
+[gd_scene load_steps=3 format=3 uid="uid://bqx3vh8k4n3ky"]
 
 [ext_resource type="Script" path="res://game.gd" id="1_game"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_ground"]
+size = Vector2(1280, 70)
 
 [node name="Game" type="Node2D"]
 script = ExtResource("1_game")
@@ -75,5 +78,16 @@ text = "[b]生成されたJSON:[/b]
 
 ここに表示されます"
 
+[node name="Ground" type="StaticBody2D" parent="."]
+
+[node name="GroundRect" type="ColorRect" parent="Ground"]
+offset_top = 650.0
+offset_right = 1280.0
+offset_bottom = 720.0
+color = Color(0.4, 0.35, 0.3, 1)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Ground"]
+position = Vector2(640, 685)
+shape = SubResource("RectangleShape2D_ground")
+
 [node name="OrigamiContainer" type="Node2D" parent="."]
-position = Vector2(800, 400)
