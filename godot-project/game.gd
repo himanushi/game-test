@@ -12,6 +12,7 @@ var origami_container: Node2D
 
 var is_generating = false
 var generated_json_data: Dictionary = {}
+var current_json_text: String = ""
 
 func _ready():
 	print("==================================================")
@@ -36,14 +37,19 @@ func _ready():
 	# モデル設定
 	llama.model_path = "res://models/qwen2-0_5b-instruct-q8_0.gguf"
 	llama.n_predict = 200
-	llama.temperature = 0.7
+	llama.temperature = 0.0  # 決定的な出力
+	# NOTE: seedプロパティはGDLlamaに存在しない
 	llama.should_output_prompt = false
 	llama.should_output_special = false
 
 	# シグナル接続
-	llama.generate_text_updated.connect(_on_llm_text_updated)
+	if llama.generate_text_updated.connect(_on_llm_text_updated) == OK:
+		print("✅ シグナル接続成功")
+	else:
+		print("❌ シグナル接続失敗")
 
 	print("LLMモデル準備完了")
+	print("利用可能なシグナル: ", llama.get_signal_list())
 
 func _on_generate_button_pressed():
 	_start_generation()
@@ -109,12 +115,16 @@ func _start_generation():
 	var schema_string = JSON.stringify(json_schema)
 	var prompt = user_input + "について、ゲームで使用する折り紙オブジェクトの属性を決めてください。"
 
-	# JSON生成開始
-	llama.run_generate_text(prompt, "", schema_string)
+	print("プロンプト: ", prompt)
+	print("スキーマ: ", schema_string)
 
-var current_json_text = ""
+	# JSON生成開始
+	current_json_text = ""
+	llama.run_generate_text(prompt, "", schema_string)
+	print("run_generate_text() 呼び出し完了")
 
 func _on_llm_text_updated(new_text: String):
+	print("LLM更新: '", new_text, "' (長さ: ", new_text.length(), ")")
 	current_json_text += new_text
 
 	# リアルタイムでJSON表示
@@ -122,7 +132,10 @@ func _on_llm_text_updated(new_text: String):
 
 	# 生成完了チェック
 	if new_text == "":
+		print("生成完了を検知")
 		_on_generation_complete()
+	else:
+		print("現在のJSON長: ", current_json_text.length())
 
 func _on_generation_complete():
 	print("生成完了")
@@ -186,18 +199,42 @@ func create_origami_sprite(data: Dictionary) -> Node2D:
 	# 形を取得
 	var shape_name = data.get("shape", "四角")
 
-	# ポリゴンを作成
+	# ポリゴンを作成（影付き）
+	var shadow = Polygon2D.new()
+	shadow.polygon = get_shape_points(shape_name)
+	shadow.color = Color(0, 0, 0, 0.3)
+	shadow.position = Vector2(5, 5)
+	sprite_node.add_child(shadow)
+
 	var polygon = Polygon2D.new()
 	polygon.polygon = get_shape_points(shape_name)
 	polygon.color = color
-
 	sprite_node.add_child(polygon)
 
-	# 名前ラベル
+	# 縁取り（折り紙っぽさを強調）
+	var outline = Line2D.new()
+	var shape_points = get_shape_points(shape_name)
+	for point in shape_points:
+		outline.add_point(point)
+	outline.add_point(shape_points[0])  # 最初の点に戻る
+	outline.width = 3.0
+	outline.default_color = Color(0.2, 0.2, 0.2, 0.5)
+	sprite_node.add_child(outline)
+
+	# 名前ラベル（背景付き）
+	var label_bg = ColorRect.new()
+	label_bg.color = Color(1, 1, 1, 0.8)
+	label_bg.position = Vector2(-80, 100)
+	label_bg.size = Vector2(160, 40)
+	sprite_node.add_child(label_bg)
+
 	var label = Label.new()
 	label.text = data.get("name", "折り紙")
-	label.position = Vector2(-50, 100)
-	label.add_theme_font_size_override("font_size", 20)
+	label.position = Vector2(-75, 105)
+	label.size = Vector2(150, 30)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.add_theme_color_override("font_color", Color(0.2, 0.2, 0.2))
+	label.add_theme_font_size_override("font_size", 24)
 	sprite_node.add_child(label)
 
 	return sprite_node
@@ -216,43 +253,46 @@ func get_origami_color(color_name: String) -> Color:
 		_: return Color(0.8, 0.8, 0.8)
 
 func get_shape_points(shape_name: String) -> PackedVector2Array:
+	var size = 80.0  # サイズを大きく
+
 	match shape_name:
 		"三角":
 			return PackedVector2Array([
-				Vector2(0, -60),
-				Vector2(-50, 50),
-				Vector2(50, 50)
+				Vector2(0, -size * 0.75),
+				Vector2(-size * 0.65, size * 0.6),
+				Vector2(size * 0.65, size * 0.6)
 			])
 		"四角":
+			# ひし形風に
 			return PackedVector2Array([
-				Vector2(-50, -50),
-				Vector2(50, -50),
-				Vector2(50, 50),
-				Vector2(-50, 50)
+				Vector2(0, -size),
+				Vector2(size * 0.7, 0),
+				Vector2(0, size),
+				Vector2(-size * 0.7, 0)
 			])
 		"五角形":
 			var points = PackedVector2Array()
 			for i in range(5):
 				var angle = -PI/2 + (i * 2 * PI / 5)
-				points.append(Vector2(cos(angle) * 50, sin(angle) * 50))
+				points.append(Vector2(cos(angle) * size, sin(angle) * size))
 			return points
 		"六角形":
 			var points = PackedVector2Array()
 			for i in range(6):
-				var angle = (i * 2 * PI / 6)
-				points.append(Vector2(cos(angle) * 50, sin(angle) * 50))
+				var angle = -PI/6 + (i * 2 * PI / 6)  # 回転を調整
+				points.append(Vector2(cos(angle) * size, sin(angle) * size))
 			return points
 		"円":
 			var points = PackedVector2Array()
-			for i in range(20):
-				var angle = (i * 2 * PI / 20)
-				points.append(Vector2(cos(angle) * 50, sin(angle) * 50))
+			for i in range(32):  # より滑らかに
+				var angle = (i * 2 * PI / 32)
+				points.append(Vector2(cos(angle) * size, sin(angle) * size))
 			return points
 		"星":
 			var points = PackedVector2Array()
 			for i in range(10):
 				var angle = -PI/2 + (i * 2 * PI / 10)
-				var radius = 50 if i % 2 == 0 else 25
+				var radius = size if i % 2 == 0 else size * 0.4
 				points.append(Vector2(cos(angle) * radius, sin(angle) * radius))
 			return points
 		_:
