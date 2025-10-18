@@ -12,7 +12,7 @@ config_version=5
 
 config/name="Scribble LLM Game"
 config/description="2D game inspired by Scribblenauts with local LLM integration"
-run/main_scene="res://llm_test.tscn"
+run/main_scene="res://game.tscn"
 config/features=PackedStringArray("4.5", "GL Compatibility")
 config/icon="res://icon.svg"
 
