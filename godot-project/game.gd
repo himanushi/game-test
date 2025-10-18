@@ -13,6 +13,8 @@ var origami_container: Node2D
 var is_generating = false
 var generated_json_data: Dictionary = {}
 var current_json_text: String = ""
+var origami_objects: Array = []  # 配置済みオブジェクトのリスト
+var next_spawn_x: float = 600.0  # 次のスポーン位置
 
 func _ready():
 	print("==================================================")
@@ -74,19 +76,10 @@ func _start_generation():
 	print("--------------------------------------------------")
 	print("生成開始: ", user_input)
 
-	# JSON Schemaを定義
+	# JSON Schemaを定義（最小限）
 	var json_schema = {
 		"type": "object",
 		"properties": {
-			"name": {
-				"type": "string",
-				"description": "オブジェクトの名前"
-			},
-			"category": {
-				"type": "string",
-				"enum": ["道具", "武器", "自然", "生き物", "食べ物", "その他"],
-				"description": "オブジェクトのカテゴリ"
-			},
 			"color": {
 				"type": "string",
 				"enum": ["赤", "青", "緑", "黄", "紫", "橙", "白", "黒", "灰"],
@@ -96,24 +89,24 @@ func _start_generation():
 				"type": "string",
 				"enum": ["三角", "四角", "五角形", "六角形", "円", "星"],
 				"description": "折り紙の形"
-			},
-			"properties": {
-				"type": "array",
-				"items": {"type": "string"},
-				"maxItems": 5,
-				"description": "オブジェクトの属性"
-			},
-			"weight": {
-				"type": "string",
-				"enum": ["軽い", "普通", "重い"],
-				"description": "重さ"
 			}
 		},
-		"required": ["name", "category", "color", "shape", "properties", "weight"]
+		"required": ["color", "shape"]
 	}
 
 	var schema_string = JSON.stringify(json_schema)
-	var prompt = user_input + "について、ゲームで使用する折り紙オブジェクトの属性を決めてください。"
+
+	# より具体的なプロンプトでユーザー入力を反映
+	var prompt = """あなたは折り紙ゲームのアシスタントです。ユーザーが「%s」というオブジェクトを要求しています。
+
+このオブジェクトのイメージに最も合う「色」と「形状」を選んでください。
+
+選択のガイドライン：
+- 色：そのオブジェクトの典型的な色を選ぶ（例：火→赤、水→青、木→緑、太陽→黄）
+- 形状：そのオブジェクトの輪郭に近い形を選ぶ（例：尖ったもの→星/三角、丸いもの→円、角ばったもの→四角）
+
+オブジェクト: %s
+上記を考慮して、最適な色と形状を決定してください。""" % [user_input, user_input]
 
 	print("プロンプト: ", prompt)
 	print("スキーマ: ", schema_string)
@@ -179,65 +172,254 @@ func _reset_generation():
 	current_json_text = ""
 
 func create_origami(data: Dictionary):
-	print("折り紙を生成: ", data.get("name", "不明"))
-
-	# 既存の折り紙を削除
-	for child in origami_container.get_children():
-		child.queue_free()
+	print("折り紙を生成: ", data.get("shape", "不明"), " (", data.get("color", "白"), ")")
 
 	# 新しい折り紙ノードを作成
 	var origami = create_origami_sprite(data)
+
+	# ランダムな位置に配置（画面下部のエリア内）
+	var spawn_x = randf_range(200.0, 1000.0)
+	var spawn_y = randf_range(350.0, 550.0)
+	origami.position = Vector2(spawn_x, spawn_y)
+
+	# コンテナに追加
 	origami_container.add_child(origami)
+	origami_objects.append(origami)
+
+	# クリックイベントを追加（削除できるように）
+	setup_origami_interaction(origami, data)
+
+	# 折り紙アニメーションを開始
+	animate_origami_creation(origami)
+
+	print("配置済みオブジェクト数: ", origami_objects.size())
+
+func setup_origami_interaction(origami: Node2D, data: Dictionary):
+	# RigidBody2D用の当たり判定を追加
+	var collision = CollisionPolygon2D.new()
+	var shape_name = data.get("shape", "四角")
+	collision.polygon = get_shape_points(shape_name)
+	origami.add_child(collision)
+
+	# RigidBody2Dのinput_eventシグナルでクリック検知
+	if origami is RigidBody2D:
+		origami.input_event.connect(func(viewport, event, shape_idx):
+			if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+				# 左クリックで削除
+				remove_origami(origami)
+			elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
+				# 右クリックで情報表示
+				print("折り紙情報: ", data.get("shape", "不明"), " - ", data.get("color", "白"))
+		)
+
+		# マウスホバー時のフィードバック
+		origami.mouse_entered.connect(func():
+			origami.modulate = Color(1.2, 1.2, 1.2, 1.0)  # 少し明るく
+		)
+
+		origami.mouse_exited.connect(func():
+			origami.modulate = Color(1.0, 1.0, 1.0, 1.0)  # 元に戻す
+		)
+
+func remove_origami(origami: Node2D):
+	print("折り紙を削除")
+
+	# フェードアウトアニメーション
+	var tween = create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(origami, "scale", Vector2(0.0, 0.0), 0.3)
+	tween.tween_property(origami, "modulate:a", 0.0, 0.3)
+	tween.tween_property(origami, "rotation", deg_to_rad(180), 0.3)
+
+	# アニメーション終了後に削除
+	tween.finished.connect(func():
+		origami_objects.erase(origami)
+		origami.queue_free()
+		print("配置済みオブジェクト数: ", origami_objects.size())
+	)
+
+func animate_origami_creation(origami: Node2D):
+	# RigidBody2Dの場合、アニメーション中は物理を無効化
+	if origami is RigidBody2D:
+		origami.freeze = true
+
+	# 初期状態を設定
+	origami.scale = Vector2(0.1, 0.1)
+	origami.rotation = deg_to_rad(180)
+	origami.modulate.a = 0.0
+
+	# Tweenでアニメーション
+	var tween = create_tween()
+	tween.set_parallel(true)  # 並列実行
+	tween.set_trans(Tween.TRANS_BACK)
+	tween.set_ease(Tween.EASE_OUT)
+
+	# スケールアニメーション（折り紙が開く）
+	tween.tween_property(origami, "scale", Vector2(1.0, 1.0), 0.8)
+
+	# 回転アニメーション（紙が回転しながら開く）
+	tween.tween_property(origami, "rotation", 0.0, 0.8)
+
+	# 透明度アニメーション（徐々に現れる）
+	tween.tween_property(origami, "modulate:a", 1.0, 0.6)
+
+	# アニメーション終了後に物理を有効化
+	tween.finished.connect(func():
+		if origami is RigidBody2D:
+			origami.freeze = false
+			# 軽く跳ねる初期速度を与える
+			origami.linear_velocity = Vector2(randf_range(-50, 50), -100)
+			origami.angular_velocity = randf_range(-2, 2)
+	)
+
+	# 折り目を順番に描画するアニメーション
+	animate_fold_lines(origami)
+
+func animate_fold_lines(origami: Node2D):
+	# 折り目の線を探す
+	var fold_lines = []
+	for child in origami.get_children():
+		if child is Line2D and child.default_color.a > 0.5:  # 折り目の線
+			fold_lines.append(child)
+
+	# 各折り目を順番に表示
+	var delay = 0.3
+	for i in range(fold_lines.size()):
+		var line = fold_lines[i]
+		line.modulate.a = 0.0
+
+		var tween = create_tween()
+		tween.tween_interval(delay + i * 0.1)
+		tween.tween_property(line, "modulate:a", 1.0, 0.3)
 
 func create_origami_sprite(data: Dictionary) -> Node2D:
-	var sprite_node = Node2D.new()
+	var sprite_node = RigidBody2D.new()
 
-	# 色を取得
+	# 物理設定
+	sprite_node.mass = 1.0
+	sprite_node.gravity_scale = 0.5  # 軽い重力
+	sprite_node.linear_damp = 2.0  # 空気抵抗
+	sprite_node.angular_damp = 3.0  # 回転減衰
+
+	# 色を取得（色名）
 	var color_name = data.get("color", "白")
 	var color = get_origami_color(color_name)
 
 	# 形を取得
 	var shape_name = data.get("shape", "四角")
 
-	# ポリゴンを作成（影付き）
+	# 影
 	var shadow = Polygon2D.new()
 	shadow.polygon = get_shape_points(shape_name)
 	shadow.color = Color(0, 0, 0, 0.3)
-	shadow.position = Vector2(5, 5)
+	shadow.position = Vector2(8, 8)
 	sprite_node.add_child(shadow)
 
+	# メインの折り紙
 	var polygon = Polygon2D.new()
 	polygon.polygon = get_shape_points(shape_name)
 	polygon.color = color
 	sprite_node.add_child(polygon)
 
-	# 縁取り（折り紙っぽさを強調）
+	# 折り目を表現（少し暗い色の線）
+	var darker_color = color.darkened(0.3)
+	var fold_lines = create_fold_lines(shape_name)
+	for line_points in fold_lines:
+		var fold = Line2D.new()
+		for point in line_points:
+			fold.add_point(point)
+		fold.width = 2.0
+		fold.default_color = darker_color
+		sprite_node.add_child(fold)
+
+	# ハイライト（折り紙の光沢）
+	var highlight = Polygon2D.new()
+	var highlight_points = get_highlight_points(shape_name)
+	highlight.polygon = highlight_points
+	highlight.color = Color(1, 1, 1, 0.3)
+	sprite_node.add_child(highlight)
+
+	# 縁取り
 	var outline = Line2D.new()
 	var shape_points = get_shape_points(shape_name)
 	for point in shape_points:
 		outline.add_point(point)
-	outline.add_point(shape_points[0])  # 最初の点に戻る
+	outline.add_point(shape_points[0])
 	outline.width = 3.0
-	outline.default_color = Color(0.2, 0.2, 0.2, 0.5)
+	outline.default_color = Color(0.2, 0.2, 0.2, 0.6)
 	sprite_node.add_child(outline)
 
-	# 名前ラベル（背景付き）
-	var label_bg = ColorRect.new()
-	label_bg.color = Color(1, 1, 1, 0.8)
-	label_bg.position = Vector2(-80, 100)
-	label_bg.size = Vector2(160, 40)
-	sprite_node.add_child(label_bg)
-
-	var label = Label.new()
-	label.text = data.get("name", "折り紙")
-	label.position = Vector2(-75, 105)
-	label.size = Vector2(150, 30)
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.add_theme_color_override("font_color", Color(0.2, 0.2, 0.2))
-	label.add_theme_font_size_override("font_size", 24)
-	sprite_node.add_child(label)
-
 	return sprite_node
+
+# Hex文字列をColorに変換
+func hex_to_color(hex: String) -> Color:
+	hex = hex.strip_edges().trim_prefix("#")
+	if hex.length() != 6:
+		return Color(0.8, 0.8, 0.8)  # デフォルト色
+
+	var r = ("0x" + hex.substr(0, 2)).hex_to_int() / 255.0
+	var g = ("0x" + hex.substr(2, 2)).hex_to_int() / 255.0
+	var b = ("0x" + hex.substr(4, 2)).hex_to_int() / 255.0
+
+	return Color(r, g, b)
+
+# 折り目の線を生成
+func create_fold_lines(shape_name: String) -> Array:
+	var lines = []
+	var size = 80.0
+
+	match shape_name:
+		"三角":
+			# 中心から頂点への線
+			lines.append([Vector2(0, 0), Vector2(0, -size * 0.75)])
+		"四角":
+			# 対角線
+			lines.append([Vector2(-size * 0.5, 0), Vector2(size * 0.5, 0)])
+			lines.append([Vector2(0, -size * 0.7), Vector2(0, size * 0.7)])
+		"五角形", "六角形":
+			# 中心から各頂点への線
+			var n = 5 if shape_name == "五角形" else 6
+			for i in range(n):
+				var angle = -PI/2 + (i * 2 * PI / n)
+				lines.append([Vector2(0, 0), Vector2(cos(angle) * size * 0.6, sin(angle) * size * 0.6)])
+		"円":
+			# 十字の折り目
+			lines.append([Vector2(-size * 0.7, 0), Vector2(size * 0.7, 0)])
+			lines.append([Vector2(0, -size * 0.7), Vector2(0, size * 0.7)])
+		"星":
+			# 中心から内側の頂点への線
+			for i in range(5):
+				var angle = -PI/2 + (i * 2 * PI / 5)
+				lines.append([Vector2(0, 0), Vector2(cos(angle) * size * 0.3, sin(angle) * size * 0.3)])
+
+	return lines
+
+# ハイライト部分（光沢）を生成
+func get_highlight_points(shape_name: String) -> PackedVector2Array:
+	var size = 80.0
+
+	match shape_name:
+		"三角":
+			return PackedVector2Array([
+				Vector2(-10, -size * 0.5),
+				Vector2(10, -size * 0.5),
+				Vector2(5, -size * 0.3),
+				Vector2(-5, -size * 0.3)
+			])
+		"四角":
+			return PackedVector2Array([
+				Vector2(-size * 0.4, -size * 0.7),
+				Vector2(size * 0.2, -size * 0.7),
+				Vector2(size * 0.1, -size * 0.4),
+				Vector2(-size * 0.3, -size * 0.4)
+			])
+		_:
+			# その他の形状は小さな円形のハイライト
+			var points = PackedVector2Array()
+			for i in range(8):
+				var angle = (i * 2 * PI / 8)
+				points.append(Vector2(cos(angle) * 15, sin(angle) * 15 - size * 0.4))
+			return points
 
 func get_origami_color(color_name: String) -> Color:
 	match color_name:
