@@ -76,22 +76,29 @@ func _start_generation():
 	print("--------------------------------------------------")
 	print("生成開始: ", user_input)
 
-	# JSON Schemaを定義（最小限）
+	# JSON Schemaを定義（頂点座標ベース）
 	var json_schema = {
 		"type": "object",
 		"properties": {
 			"color": {
 				"type": "string",
-				"enum": ["赤", "青", "緑", "黄", "紫", "橙", "白", "黒", "灰"],
-				"description": "折り紙の色"
+				"pattern": "^[0-9A-Fa-f]{3}$",
+				"description": "折り紙の色（3桁Hex: RGB）"
 			},
-			"shape": {
-				"type": "string",
-				"enum": ["三角", "四角", "五角形", "六角形", "円", "星"],
-				"description": "折り紙の形"
+			"vertices": {
+				"type": "array",
+				"items": {
+					"type": "array",
+					"items": {"type": "number"},
+					"minItems": 2,
+					"maxItems": 2
+				},
+				"minItems": 3,
+				"maxItems": 10,
+				"description": "折り紙の形状を定義する頂点座標のリスト [[x1,y1], [x2,y2], ...]。座標は-100から100の範囲"
 			}
 		},
-		"required": ["color", "shape"]
+		"required": ["color", "vertices"]
 	}
 
 	var schema_string = JSON.stringify(json_schema)
@@ -99,14 +106,18 @@ func _start_generation():
 	# より具体的なプロンプトでユーザー入力を反映
 	var prompt = """あなたは折り紙ゲームのアシスタントです。ユーザーが「%s」というオブジェクトを要求しています。
 
-このオブジェクトのイメージに最も合う「色」と「形状」を選んでください。
+このオブジェクトのイメージに最も合う「色」と「形状の頂点座標」を決定してください。
 
-選択のガイドライン：
-- 色：そのオブジェクトの典型的な色を選ぶ（例：火→赤、水→青、木→緑、太陽→黄）
-- 形状：そのオブジェクトの輪郭に近い形を選ぶ（例：尖ったもの→星/三角、丸いもの→円、角ばったもの→四角）
+生成ルール：
+- color: 3桁のHex形式（例: "F00"=赤, "0AF"=青, "0F0"=緑, "FF0"=黄, "F80"=橙）
+- vertices: そのオブジェクトの輪郭を表す3-10個の座標点 [[x,y], [x,y], ...]
+  - 座標範囲: -100 ~ 100
+  - 例: 三角形なら [[0,-80], [-70,60], [70,60]]
+  - 例: 四角形なら [[-60,-60], [60,-60], [60,60], [-60,60]]
+  - 複雑な形も可能（犬の顔、星、ハートなど）
 
 オブジェクト: %s
-上記を考慮して、最適な色と形状を決定してください。""" % [user_input, user_input]
+このオブジェクトの典型的な色と形状を表現してください。""" % [user_input, user_input]
 
 	print("プロンプト: ", prompt)
 	print("スキーマ: ", schema_string)
@@ -172,7 +183,8 @@ func _reset_generation():
 	current_json_text = ""
 
 func create_origami(data: Dictionary):
-	print("折り紙を生成: ", data.get("shape", "不明"), " (", data.get("color", "白"), ")")
+	var vertices_count = data.get("vertices", []).size() if data.has("vertices") else 0
+	print("折り紙を生成: 頂点数=", vertices_count, ", 色=", data.get("color", "AAA"))
 
 	# 新しい折り紙ノードを作成
 	var origami = create_origami_sprite(data)
@@ -197,8 +209,18 @@ func create_origami(data: Dictionary):
 func setup_origami_interaction(origami: Node2D, data: Dictionary):
 	# RigidBody2D用の当たり判定を追加
 	var collision = CollisionPolygon2D.new()
-	var shape_name = data.get("shape", "四角")
-	collision.polygon = get_shape_points(shape_name)
+	var vertices_data = data.get("vertices", [])
+	var vertices = parse_vertices(vertices_data)
+
+	# デフォルト形状（頂点が不正な場合）
+	if vertices.size() < 3:
+		vertices = PackedVector2Array([
+			Vector2(0, -60),
+			Vector2(-60, 60),
+			Vector2(60, 60)
+		])
+
+	collision.polygon = vertices
 	origami.add_child(collision)
 
 	# RigidBody2Dのinput_eventシグナルでクリック検知
@@ -209,7 +231,8 @@ func setup_origami_interaction(origami: Node2D, data: Dictionary):
 				remove_origami(origami)
 			elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
 				# 右クリックで情報表示
-				print("折り紙情報: ", data.get("shape", "不明"), " - ", data.get("color", "白"))
+				var vertex_count = data.get("vertices", []).size()
+				print("折り紙情報: 頂点数=", vertex_count, ", 色=", data.get("color", "AAA"))
 		)
 
 		# マウスホバー時のフィードバック
@@ -301,65 +324,88 @@ func create_origami_sprite(data: Dictionary) -> Node2D:
 	sprite_node.linear_damp = 2.0  # 空気抵抗
 	sprite_node.angular_damp = 3.0  # 回転減衰
 
-	# 色を取得（色名）
-	var color_name = data.get("color", "白")
-	var color = get_origami_color(color_name)
+	# 色を取得（3桁Hex）
+	var color_hex = data.get("color", "AAA")
+	var color = hex3_to_color(color_hex)
 
-	# 形を取得
-	var shape_name = data.get("shape", "四角")
+	# 頂点座標を取得
+	var vertices_data = data.get("vertices", [])
+	var vertices = parse_vertices(vertices_data)
+
+	# デフォルト形状（頂点が不正な場合）
+	if vertices.size() < 3:
+		vertices = PackedVector2Array([
+			Vector2(0, -60),
+			Vector2(-60, 60),
+			Vector2(60, 60)
+		])
 
 	# 影
 	var shadow = Polygon2D.new()
-	shadow.polygon = get_shape_points(shape_name)
+	shadow.polygon = vertices
 	shadow.color = Color(0, 0, 0, 0.3)
 	shadow.position = Vector2(8, 8)
 	sprite_node.add_child(shadow)
 
 	# メインの折り紙
 	var polygon = Polygon2D.new()
-	polygon.polygon = get_shape_points(shape_name)
+	polygon.polygon = vertices
 	polygon.color = color
 	sprite_node.add_child(polygon)
 
-	# 折り目を表現（少し暗い色の線）
+	# 折り目を表現（中心から各頂点への線）
 	var darker_color = color.darkened(0.3)
-	var fold_lines = create_fold_lines(shape_name)
-	for line_points in fold_lines:
+	for i in range(min(vertices.size(), 6)):  # 最大6本まで
 		var fold = Line2D.new()
-		for point in line_points:
-			fold.add_point(point)
+		fold.add_point(Vector2(0, 0))
+		fold.add_point(vertices[i])
 		fold.width = 2.0
 		fold.default_color = darker_color
 		sprite_node.add_child(fold)
 
-	# ハイライト（折り紙の光沢）
+	# ハイライト（中央に小さなハイライト）
 	var highlight = Polygon2D.new()
-	var highlight_points = get_highlight_points(shape_name)
+	var highlight_points = PackedVector2Array()
+	for i in range(8):
+		var angle = (i * 2 * PI / 8)
+		highlight_points.append(Vector2(cos(angle) * 15, sin(angle) * 15 - 20))
 	highlight.polygon = highlight_points
 	highlight.color = Color(1, 1, 1, 0.3)
 	sprite_node.add_child(highlight)
 
 	# 縁取り
 	var outline = Line2D.new()
-	var shape_points = get_shape_points(shape_name)
-	for point in shape_points:
+	for point in vertices:
 		outline.add_point(point)
-	outline.add_point(shape_points[0])
+	outline.add_point(vertices[0])
 	outline.width = 3.0
 	outline.default_color = Color(0.2, 0.2, 0.2, 0.6)
 	sprite_node.add_child(outline)
 
 	return sprite_node
 
-# Hex文字列をColorに変換
-func hex_to_color(hex: String) -> Color:
+# 頂点配列をパース
+func parse_vertices(vertices_data: Array) -> PackedVector2Array:
+	var vertices = PackedVector2Array()
+
+	for vertex in vertices_data:
+		if vertex is Array and vertex.size() >= 2:
+			var x = float(vertex[0])
+			var y = float(vertex[1])
+			vertices.append(Vector2(x, y))
+
+	return vertices
+
+# 3桁Hex文字列をColorに変換
+func hex3_to_color(hex: String) -> Color:
 	hex = hex.strip_edges().trim_prefix("#")
-	if hex.length() != 6:
+	if hex.length() != 3:
 		return Color(0.8, 0.8, 0.8)  # デフォルト色
 
-	var r = ("0x" + hex.substr(0, 2)).hex_to_int() / 255.0
-	var g = ("0x" + hex.substr(2, 2)).hex_to_int() / 255.0
-	var b = ("0x" + hex.substr(4, 2)).hex_to_int() / 255.0
+	# 3桁Hexを6桁に拡張（F00 -> FF0000）
+	var r = ("0x" + hex.substr(0, 1) + hex.substr(0, 1)).hex_to_int() / 255.0
+	var g = ("0x" + hex.substr(1, 1) + hex.substr(1, 1)).hex_to_int() / 255.0
+	var b = ("0x" + hex.substr(2, 1) + hex.substr(2, 1)).hex_to_int() / 255.0
 
 	return Color(r, g, b)
 
