@@ -37,8 +37,8 @@ func _ready():
 	add_child(llama)
 
 	# モデル設定
-	llama.model_path = "res://models/qwen2-0_5b-instruct-q8_0.gguf"
-	llama.n_predict = 200
+	llama.model_path = "res://models/Qwen3-1.7B-BF16.gguf"
+	llama.n_predict = 300  # 頂点座標生成のため少し増やす
 	llama.temperature = 0.0  # 決定的な出力
 	# NOTE: seedプロパティはGDLlamaに存在しない
 	llama.should_output_prompt = false
