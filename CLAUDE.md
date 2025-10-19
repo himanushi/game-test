@@ -127,8 +127,8 @@ godot-project/
 現在の設定（`game.gd`）：
 
 ```gdscript
-llama.model_path = "res://models/qwen2-0_5b-instruct-q8_0.gguf"
-llama.n_predict = 200      # 生成トークン数
+llama.model_path = "res://models/Qwen3-1.7B-BF16.gguf"
+llama.n_predict = 300      # 生成トークン数（頂点座標生成のため多め）
 llama.temperature = 0.0    # 決定的な出力
 llama.should_output_prompt = false
 llama.should_output_special = false
