@@ -22,7 +22,7 @@ func _ready():
 	add_child(llama)
 
 	# モデル設定
-	llama.model_path = "res://models/qwen2-0_5b-instruct-q8_0.gguf"
+	llama.model_path = "res://models/Qwen3-1.7B-BF16.gguf"
 	llama.n_predict = 200  # 生成するトークン数
 	llama.temperature = 0.7
 	llama.should_output_prompt = false  # プロンプトを出力しない
