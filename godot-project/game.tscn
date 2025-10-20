@@ -3,33 +3,33 @@
 [ext_resource type="Script" uid="uid://c7bh4bgo5b5a1" path="res://game.gd" id="1_game"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_ground"]
-size = Vector2(1280, 70)
+size = Vector2(800, 70)
 
 [node name="Game" type="Node2D"]
 script = ExtResource("1_game")
 
 [node name="Background" type="ColorRect" parent="."]
-offset_right = 1280.0
-offset_bottom = 720.0
+offset_right = 800.0
+offset_bottom = 600.0
 color = Color(0.95, 0.93, 0.88, 1)
 
 [node name="UI" type="CanvasLayer" parent="."]
 
 [node name="TitleLabel" type="Label" parent="UI"]
-offset_left = 100.0
-offset_top = 30.0
-offset_right = 1180.0
-offset_bottom = 80.0
+offset_left = 50.0
+offset_top = 20.0
+offset_right = 750.0
+offset_bottom = 60.0
 theme_override_colors/font_color = Color(0.3, 0.25, 0.2, 1)
-theme_override_font_sizes/font_size = 36
+theme_override_font_sizes/font_size = 28
 text = "折り紙パズル - Origami LLM"
 horizontal_alignment = 1
 
 [node name="InputPanel" type="PanelContainer" parent="UI"]
-offset_left = 340.0
-offset_top = 100.0
-offset_right = 940.0
-offset_bottom = 200.0
+offset_left = 150.0
+offset_top = 70.0
+offset_right = 650.0
+offset_bottom = 160.0
 
 [node name="VBox" type="VBoxContainer" parent="UI/InputPanel"]
 layout_mode = 2
@@ -57,22 +57,22 @@ layout_mode = 2
 text = "折る！"
 
 [node name="StatusLabel" type="Label" parent="UI"]
-offset_left = 100.0
-offset_top = 220.0
-offset_right = 1180.0
-offset_bottom = 260.0
+offset_left = 50.0
+offset_top = 170.0
+offset_right = 750.0
+offset_bottom = 200.0
 theme_override_colors/font_color = Color(0.5, 0.4, 0.3, 1)
-theme_override_font_sizes/font_size = 18
+theme_override_font_sizes/font_size = 16
 text = "オブジェクトを入力して「折る！」ボタンを押してください"
 horizontal_alignment = 1
 
 [node name="JsonDisplay" type="RichTextLabel" parent="UI"]
-offset_left = 100.0
-offset_top = 280.0
-offset_right = 500.0
-offset_bottom = 680.0
+offset_left = 50.0
+offset_top = 210.0
+offset_right = 400.0
+offset_bottom = 550.0
 theme_override_colors/default_color = Color(0.3, 0.25, 0.2, 1)
-theme_override_font_sizes/normal_font_size = 16
+theme_override_font_sizes/normal_font_size = 14
 bbcode_enabled = true
 text = "[b]生成されたJSON:[/b]
 
@@ -81,13 +81,13 @@ text = "[b]生成されたJSON:[/b]
 [node name="Ground" type="StaticBody2D" parent="."]
 
 [node name="GroundRect" type="ColorRect" parent="Ground"]
-offset_top = 650.0
-offset_right = 1280.0
-offset_bottom = 720.0
+offset_top = 530.0
+offset_right = 800.0
+offset_bottom = 600.0
 color = Color(0.4, 0.35, 0.3, 1)
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="Ground"]
-position = Vector2(640, 685)
+position = Vector2(400, 565)
 shape = SubResource("RectangleShape2D_ground")
 
 [node name="OrigamiContainer" type="Node2D" parent="."]
