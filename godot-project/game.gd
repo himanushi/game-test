@@ -38,7 +38,7 @@ func _ready():
 
 	# モデル設定
 	llama.model_path = "res://models/Qwen2.5-3B-Instruct-Q8_0.gguf"
-	llama.n_predict = 150  # 3x3ドット配列生成に十分な長さ
+	llama.n_predict = 200  # 5x5ドット配列生成に十分な長さ
 	llama.temperature = 0.0  # 決定的な出力
 	# NOTE: seedプロパティはGDLlamaに存在しない
 	llama.should_output_prompt = false
@@ -76,7 +76,7 @@ func _start_generation():
 	print("--------------------------------------------------")
 	print("生成開始: ", user_input)
 
-	# JSON Schemaを定義（3x3ドット文字列配列ベース）
+	# JSON Schemaを定義（5x5ドット文字列配列ベース）
 	var json_schema = {
 		"type": "object",
 		"properties": {
@@ -89,11 +89,11 @@ func _start_generation():
 				"type": "array",
 				"items": {
 					"type": "string",
-					"pattern": "^[01]{3}$"
+					"pattern": "^[01]{5}$"
 				},
-				"minItems": 3,
-				"maxItems": 3,
-				"description": "3x3のドットパターン。各行は3文字の文字列で、'1'が塗りつぶし、'0'が空白を表す"
+				"minItems": 5,
+				"maxItems": 5,
+				"description": "5x5のドットパターン。各行は5文字の文字列で、'1'が塗りつぶし、'0'が空白を表す"
 			}
 		},
 		"required": ["color", "dots"]
@@ -102,14 +102,18 @@ func _start_generation():
 	var schema_string = JSON.stringify(json_schema)
 
 	# より具体的なプロンプトでユーザー入力を反映
-	var prompt = """3x3ドットで「%s」を描いてください。
+	var prompt = """5x5ドットで「%s」を描いてください。
 
 ルール:
 - color: 3桁Hex (例: F00=赤, 0AF=青, 0F0=緑, FF0=黄, 888=灰)
-- dots: 3行の文字列配列。各行は3文字。1=塗りつぶし、0=空白
+- dots: 5行の文字列配列。各行は5文字。1=塗りつぶし、0=空白
 
 例:
-武器 → {"color":"AAA","dots":["010","010","010"]}
+ハート → {"color":"F00","dots":["01010","11111","11111","01110","00100"]}
+
+家 → {"color":"840","dots":["00100","01110","01110","01110","11111"]}
+
+剣 → {"color":"AAA","dots":["00100","00100","01110","01110","00100"]}
 
 「%s」:""" % [user_input, user_input]
 
@@ -342,13 +346,13 @@ func create_origami_sprite(data: Dictionary) -> Node2D:
 	var dots_data = data.get("dots", [])
 
 	# デフォルトドットパターン（データが不正な場合）
-	if dots_data.size() != 3:
+	if dots_data.size() != 5:
 		dots_data = create_default_dots()
 
-	var dot_size = 20.0  # 各ドットのサイズ（3x3なので大きめ）
-	var dot_spacing = 25.0  # ドット間の間隔
-	var offset_x = -25.0  # 中心からのオフセット
-	var offset_y = -25.0
+	var dot_size = 12.0  # 各ドットのサイズ（5x5なので適度なサイズ）
+	var dot_spacing = 15.0  # ドット間の間隔
+	var offset_x = -30.0  # 中心からのオフセット
+	var offset_y = -30.0
 
 	# 影用のコンテナ
 	var shadow_container = Node2D.new()
@@ -359,13 +363,13 @@ func create_origami_sprite(data: Dictionary) -> Node2D:
 	var dots_container = Node2D.new()
 	sprite_node.add_child(dots_container)
 
-	# 3x3のドットを描画
-	for row_idx in range(3):
+	# 5x5のドットを描画
+	for row_idx in range(5):
 		if row_idx >= dots_data.size():
 			break
 		var row = dots_data[row_idx]
 
-		for col_idx in range(3):
+		for col_idx in range(5):
 			var should_draw = false
 
 			# 文字列形式 "0000110000" の場合
@@ -405,8 +409,17 @@ func create_dot_rect(x: float, y: float, size: float, color: Color) -> ColorRect
 
 # デフォルトのドットパターン（矩形）
 func create_default_dots() -> Array:
-	# 3x3の中央のみ
-	return ["010", "111", "010"]
+	var default_pattern = []
+	for i in range(5):
+		var row_str = ""
+		for j in range(5):
+			# 外側1マス以外を'1'
+			if i >= 1 and i < 4 and j >= 1 and j < 4:
+				row_str += "1"
+			else:
+				row_str += "0"
+		default_pattern.append(row_str)
+	return default_pattern
 
 # ドット配列の外接矩形を取得
 func get_dots_bounds(dots: Array) -> Dictionary:
@@ -422,10 +435,10 @@ func get_dots_bounds(dots: Array) -> Dictionary:
 
 	var found_any = false
 
-	for row_idx in range(min(dots.size(), 3)):
+	for row_idx in range(min(dots.size(), 5)):
 		var row = dots[row_idx]
 
-		for col_idx in range(3):
+		for col_idx in range(5):
 			var is_active = false
 
 			# 文字列形式 "0000110000" の場合
