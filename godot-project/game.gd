@@ -37,8 +37,8 @@ func _ready():
 	add_child(llama)
 
 	# モデル設定
-	llama.model_path = "res://models/Qwen3-1.7B-BF16.gguf"
-	llama.n_predict = 300  # 頂点座標生成のため少し増やす
+	llama.model_path = "res://models/Qwen2.5-3B-Instruct-Q8_0.gguf"
+	llama.n_predict = 200  # 5x5ドット配列生成に十分な長さ
 	llama.temperature = 0.0  # 決定的な出力
 	# NOTE: seedプロパティはGDLlamaに存在しない
 	llama.should_output_prompt = false
@@ -76,7 +76,7 @@ func _start_generation():
 	print("--------------------------------------------------")
 	print("生成開始: ", user_input)
 
-	# JSON Schemaを定義（頂点座標ベース）
+	# JSON Schemaを定義（5x5ドット文字列配列ベース）
 	var json_schema = {
 		"type": "object",
 		"properties": {
@@ -85,39 +85,37 @@ func _start_generation():
 				"pattern": "^[0-9A-Fa-f]{3}$",
 				"description": "折り紙の色（3桁Hex: RGB）"
 			},
-			"vertices": {
+			"dots": {
 				"type": "array",
 				"items": {
-					"type": "array",
-					"items": {"type": "number"},
-					"minItems": 2,
-					"maxItems": 2
+					"type": "string",
+					"pattern": "^[01]{5}$"
 				},
-				"minItems": 3,
-				"maxItems": 10,
-				"description": "折り紙の形状を定義する頂点座標のリスト [[x1,y1], [x2,y2], ...]。座標は-100から100の範囲"
+				"minItems": 5,
+				"maxItems": 5,
+				"description": "5x5のドットパターン。各行は5文字の文字列で、'1'が塗りつぶし、'0'が空白を表す"
 			}
 		},
-		"required": ["color", "vertices"]
+		"required": ["color", "dots"]
 	}
 
 	var schema_string = JSON.stringify(json_schema)
 
 	# より具体的なプロンプトでユーザー入力を反映
-	var prompt = """あなたは折り紙ゲームのアシスタントです。ユーザーが「%s」というオブジェクトを要求しています。
+	var prompt = """5x5ドットで「%s」を描いてください。
 
-このオブジェクトのイメージに最も合う「色」と「形状の頂点座標」を決定してください。
+ルール:
+- color: 3桁Hex (例: F00=赤, 0AF=青, 0F0=緑, FF0=黄, 888=灰)
+- dots: 5行の文字列配列。各行は5文字。1=塗りつぶし、0=空白
 
-生成ルール：
-- color: 3桁のHex形式（例: "F00"=赤, "0AF"=青, "0F0"=緑, "FF0"=黄, "F80"=橙）
-- vertices: そのオブジェクトの輪郭を表す3-10個の座標点 [[x,y], [x,y], ...]
-  - 座標範囲: -100 ~ 100
-  - 例: 三角形なら [[0,-80], [-70,60], [70,60]]
-  - 例: 四角形なら [[-60,-60], [60,-60], [60,60], [-60,60]]
-  - 複雑な形も可能（犬の顔、星、ハートなど）
+例:
+ハート → {"color":"F00","dots":["01010","11111","11111","01110","00100"]}
 
-オブジェクト: %s
-このオブジェクトの典型的な色と形状を表現してください。""" % [user_input, user_input]
+家 → {"color":"840","dots":["00100","01110","01110","01110","11111"]}
+
+剣 → {"color":"AAA","dots":["00100","00100","01110","01110","00100"]}
+
+「%s」:""" % [user_input, user_input]
 
 	print("プロンプト: ", prompt)
 	print("スキーマ: ", schema_string)
@@ -183,15 +181,15 @@ func _reset_generation():
 	current_json_text = ""
 
 func create_origami(data: Dictionary):
-	var vertices_count = data.get("vertices", []).size() if data.has("vertices") else 0
-	print("折り紙を生成: 頂点数=", vertices_count, ", 色=", data.get("color", "AAA"))
+	var dots_count = count_active_dots(data.get("dots", []))
+	print("折り紙を生成: ドット数=", dots_count, ", 色=", data.get("color", "AAA"))
 
 	# 新しい折り紙ノードを作成
 	var origami = create_origami_sprite(data)
 
 	# ランダムな位置に配置（画面下部のエリア内）
-	var spawn_x = randf_range(200.0, 1000.0)
-	var spawn_y = randf_range(350.0, 550.0)
+	var spawn_x = randf_range(150.0, 650.0)
+	var spawn_y = randf_range(250.0, 450.0)
 	origami.position = Vector2(spawn_x, spawn_y)
 
 	# コンテナに追加
@@ -206,19 +204,35 @@ func create_origami(data: Dictionary):
 
 	print("配置済みオブジェクト数: ", origami_objects.size())
 
+# ドット数をカウント
+func count_active_dots(dots: Array) -> int:
+	var count = 0
+	for row in dots:
+		if row is String:
+			# 文字列形式 "0000110000" の場合
+			for i in range(row.length()):
+				if row[i] == "1":
+					count += 1
+		elif row is Array:
+			# 配列形式（後方互換性）
+			for dot in row:
+				if dot:
+					count += 1
+	return count
+
 func setup_origami_interaction(origami: Node2D, data: Dictionary):
 	# RigidBody2D用の当たり判定を追加
-	var collision = CollisionPolygon2D.new()
-	var vertices_data = data.get("vertices", [])
-	var vertices = parse_vertices(vertices_data)
+	# ドット配列から外接する矩形を作成
+	var dots_data = data.get("dots", [])
+	var bounds = get_dots_bounds(dots_data)
 
-	# デフォルト形状（頂点が不正な場合）
-	if vertices.size() < 3:
-		vertices = PackedVector2Array([
-			Vector2(0, -60),
-			Vector2(-60, 60),
-			Vector2(60, 60)
-		])
+	var collision = CollisionPolygon2D.new()
+	var vertices = PackedVector2Array([
+		Vector2(bounds.min_x, bounds.min_y),
+		Vector2(bounds.max_x, bounds.min_y),
+		Vector2(bounds.max_x, bounds.max_y),
+		Vector2(bounds.min_x, bounds.max_y)
+	])
 
 	collision.polygon = vertices
 	origami.add_child(collision)
@@ -328,61 +342,135 @@ func create_origami_sprite(data: Dictionary) -> Node2D:
 	var color_hex = data.get("color", "AAA")
 	var color = hex3_to_color(color_hex)
 
-	# 頂点座標を取得
-	var vertices_data = data.get("vertices", [])
-	var vertices = parse_vertices(vertices_data)
+	# ドット配列を取得
+	var dots_data = data.get("dots", [])
 
-	# デフォルト形状（頂点が不正な場合）
-	if vertices.size() < 3:
-		vertices = PackedVector2Array([
-			Vector2(0, -60),
-			Vector2(-60, 60),
-			Vector2(60, 60)
-		])
+	# デフォルトドットパターン（データが不正な場合）
+	if dots_data.size() != 5:
+		dots_data = create_default_dots()
 
-	# 影
-	var shadow = Polygon2D.new()
-	shadow.polygon = vertices
-	shadow.color = Color(0, 0, 0, 0.3)
-	shadow.position = Vector2(8, 8)
-	sprite_node.add_child(shadow)
+	var dot_size = 12.0  # 各ドットのサイズ（5x5なので大きめ）
+	var dot_spacing = 15.0  # ドット間の間隔
+	var offset_x = -30.0  # 中心からのオフセット
+	var offset_y = -30.0
 
-	# メインの折り紙
-	var polygon = Polygon2D.new()
-	polygon.polygon = vertices
-	polygon.color = color
-	sprite_node.add_child(polygon)
+	# 影用のコンテナ
+	var shadow_container = Node2D.new()
+	shadow_container.position = Vector2(4, 4)
+	sprite_node.add_child(shadow_container)
 
-	# 折り目を表現（中心から各頂点への線）
-	var darker_color = color.darkened(0.3)
-	for i in range(min(vertices.size(), 6)):  # 最大6本まで
-		var fold = Line2D.new()
-		fold.add_point(Vector2(0, 0))
-		fold.add_point(vertices[i])
-		fold.width = 2.0
-		fold.default_color = darker_color
-		sprite_node.add_child(fold)
+	# メインのドット描画
+	var dots_container = Node2D.new()
+	sprite_node.add_child(dots_container)
 
-	# ハイライト（中央に小さなハイライト）
-	var highlight = Polygon2D.new()
-	var highlight_points = PackedVector2Array()
-	for i in range(8):
-		var angle = (i * 2 * PI / 8)
-		highlight_points.append(Vector2(cos(angle) * 15, sin(angle) * 15 - 20))
-	highlight.polygon = highlight_points
-	highlight.color = Color(1, 1, 1, 0.3)
-	sprite_node.add_child(highlight)
+	# 5x5のドットを描画
+	for row_idx in range(5):
+		if row_idx >= dots_data.size():
+			break
+		var row = dots_data[row_idx]
 
-	# 縁取り
-	var outline = Line2D.new()
-	for point in vertices:
-		outline.add_point(point)
-	outline.add_point(vertices[0])
-	outline.width = 3.0
-	outline.default_color = Color(0.2, 0.2, 0.2, 0.6)
-	sprite_node.add_child(outline)
+		for col_idx in range(5):
+			var should_draw = false
+
+			# 文字列形式 "0000110000" の場合
+			if row is String:
+				if col_idx < row.length() and row[col_idx] == "1":
+					should_draw = true
+			# 配列形式（後方互換性）
+			elif row is Array:
+				if col_idx < row.size() and row[col_idx]:
+					should_draw = true
+
+			if should_draw:
+				var x = offset_x + col_idx * dot_spacing
+				var y = offset_y + row_idx * dot_spacing
+
+				# 影
+				var shadow_dot = create_dot_rect(x, y, dot_size, Color(0, 0, 0, 0.3))
+				shadow_container.add_child(shadow_dot)
+
+				# メインドット
+				var dot = create_dot_rect(x, y, dot_size, color)
+				dots_container.add_child(dot)
+
+	# ハイライト効果（中央上部に小さな光沢）
+	var highlight = create_dot_rect(offset_x + 20, offset_y + 10, dot_size * 1.5, Color(1, 1, 1, 0.4))
+	dots_container.add_child(highlight)
 
 	return sprite_node
+
+# ドット用の矩形を作成
+func create_dot_rect(x: float, y: float, size: float, color: Color) -> ColorRect:
+	var rect = ColorRect.new()
+	rect.position = Vector2(x, y)
+	rect.size = Vector2(size, size)
+	rect.color = color
+	return rect
+
+# デフォルトのドットパターン（矩形）
+func create_default_dots() -> Array:
+	var default_pattern = []
+	for i in range(5):
+		var row_str = ""
+		for j in range(5):
+			# 外側1マス以外を'1'
+			if i >= 1 and i < 4 and j >= 1 and j < 4:
+				row_str += "1"
+			else:
+				row_str += "0"
+		default_pattern.append(row_str)
+	return default_pattern
+
+# ドット配列の外接矩形を取得
+func get_dots_bounds(dots: Array) -> Dictionary:
+	var min_x = INF
+	var max_x = -INF
+	var min_y = INF
+	var max_y = -INF
+
+	var dot_spacing = 10.0
+	var offset_x = -45.0
+	var offset_y = -45.0
+	var dot_size = 8.0
+
+	var found_any = false
+
+	for row_idx in range(min(dots.size(), 5)):
+		var row = dots[row_idx]
+
+		for col_idx in range(5):
+			var is_active = false
+
+			# 文字列形式 "0000110000" の場合
+			if row is String:
+				if col_idx < row.length() and row[col_idx] == "1":
+					is_active = true
+			# 配列形式（後方互換性）
+			elif row is Array:
+				if col_idx < row.size() and row[col_idx]:
+					is_active = true
+
+			if is_active:
+				found_any = true
+				var x = offset_x + col_idx * dot_spacing
+				var y = offset_y + row_idx * dot_spacing
+				min_x = min(min_x, x)
+				max_x = max(max_x, x + dot_size)
+				min_y = min(min_y, y)
+				max_y = max(max_y, y + dot_size)
+
+	# ドットが1つもない場合はデフォルト
+	if not found_any:
+		return {"min_x": -50.0, "max_x": 50.0, "min_y": -50.0, "max_y": 50.0}
+
+	# マージンを追加
+	var margin = 5.0
+	return {
+		"min_x": min_x - margin,
+		"max_x": max_x + margin,
+		"min_y": min_y - margin,
+		"max_y": max_y + margin
+	}
 
 # 頂点配列をパース
 func parse_vertices(vertices_data: Array) -> PackedVector2Array:
