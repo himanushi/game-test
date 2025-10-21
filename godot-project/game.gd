@@ -1,9 +1,10 @@
 extends Node2D
 
-# 折り紙パズル - メインゲームスクリプト
+# 折り紙パズル - メインゲームスクリプト（NobodyWho版）
 # プレイヤーがテキストを入力すると、LLMがJSONを生成し、折り紙オブジェクトが出現
 
-var llama: GDLlama
+var model_node: NobodyWhoModel
+var chat_node: NobodyWhoChat
 var input_field: LineEdit
 var generate_button: Button
 var status_label: Label
@@ -13,12 +14,11 @@ var origami_container: Node2D
 var is_generating = false
 var generated_json_data: Dictionary = {}
 var current_json_text: String = ""
-var origami_objects: Array = []  # 配置済みオブジェクトのリスト
-var next_spawn_x: float = 600.0  # 次のスポーン位置
+var origami_objects: Array = []
 
 func _ready():
 	print("==================================================")
-	print("折り紙パズルゲーム起動")
+	print("折り紙パズルゲーム起動 (NobodyWho版)")
 	print("==================================================")
 
 	# UI要素を取得
@@ -32,26 +32,32 @@ func _ready():
 	generate_button.pressed.connect(_on_generate_button_pressed)
 	input_field.text_submitted.connect(_on_input_submitted)
 
-	# GDLlamaノードを作成
-	llama = GDLlama.new()
-	add_child(llama)
+	# NobodyWhoModelノードを作成
+	model_node = NobodyWhoModel.new()
+	model_node.name = "OrigamiModel"
+	model_node.model_path = "res://models/gemma-3-1b-it.fp16.gguf"
+	add_child(model_node)
 
-	# モデル設定
-	llama.model_path = "res://models/Qwen2.5-3B-Instruct-Q8_0.gguf"
-	llama.n_predict = 200  # 5x5ドット配列生成に十分な長さ
-	llama.temperature = 0.0  # 決定的な出力
-	# NOTE: seedプロパティはGDLlamaに存在しない
-	llama.should_output_prompt = false
-	llama.should_output_special = false
+	# NobodyWhoChatノードを作成
+	chat_node = NobodyWhoChat.new()
+	chat_node.name = "OrigamiChat"
+	chat_node.model_node = model_node
+	chat_node.system_prompt = "You are a creative assistant that generates pixel art patterns in JSON format."
+	add_child(chat_node)
 
 	# シグナル接続
-	if llama.generate_text_updated.connect(_on_llm_text_updated) == OK:
-		print("✅ シグナル接続成功")
-	else:
-		print("❌ シグナル接続失敗")
+	chat_node.response_updated.connect(_on_response_updated)
+	chat_node.response_finished.connect(_on_response_finished)
 
+	# モデルをロード
+	print("モデルをロード中...")
+	status_label.text = "モデルを読み込み中..."
+	chat_node.start_worker()
+
+	# モデルロード完了待ち（少し待機）
+	await get_tree().create_timer(2.0).timeout
+	status_label.text = "準備完了！折り紙を作成しましょう"
 	print("LLMモデル準備完了")
-	print("利用可能なシグナル: ", llama.get_signal_list())
 
 func _on_generate_button_pressed():
 	_start_generation()
@@ -76,72 +82,57 @@ func _start_generation():
 	print("--------------------------------------------------")
 	print("生成開始: ", user_input)
 
-	# JSON Schemaを定義（5x5ドット文字列配列ベース）
-	var json_schema = {
-		"type": "object",
-		"properties": {
-			"color": {
-				"type": "string",
-				"pattern": "^[0-9A-Fa-f]{3}$",
-				"description": "折り紙の色（3桁Hex: RGB）"
-			},
-			"dots": {
-				"type": "array",
-				"items": {
-					"type": "string",
-					"pattern": "^[01]{5}$"
-				},
-				"minItems": 5,
-				"maxItems": 5,
-				"description": "5x5のドットパターン。各行は5文字の文字列で、'1'が塗りつぶし、'0'が空白を表す"
-			}
-		},
-		"required": ["color", "dots"]
-	}
+	# GBNFでJSON形式を定義（5x5ドットパターン）
+	var gbnf_grammar = """
+root ::= object
+object ::= "{" ws "\\"color\\"" ws ":" ws color ws "," ws "\\"dots\\"" ws ":" ws dots ws "}"
+color ::= "\\"" [0-9A-Fa-f] [0-9A-Fa-f] [0-9A-Fa-f] "\\""
+dots ::= "[" ws row ws "," ws row ws "," ws row ws "," ws row ws "," ws row ws "]"
+row ::= "\\"" [01] [01] [01] [01] [01] "\\""
+ws ::= [ \\t\\n]*
+"""
 
-	var schema_string = JSON.stringify(json_schema)
+	# Samplerを設定してGrammarを適用
+	var sampler = NobodyWhoSampler.new()
+	sampler.use_grammar = true
+	sampler.temperature = 0.0  # 決定的な出力
+	chat_node.sampler = sampler
 
-	# より具体的なプロンプトでユーザー入力を反映
-	var prompt = """5x5ドットで「%s」を描いてください。
+	# プロンプトを構築
+	var prompt = """5x5ピクセルアートで「%s」を描いてください。
 
 ルール:
-- color: 3桁Hex (例: F00=赤, 0AF=青, 0F0=緑, FF0=黄, 888=灰)
-- dots: 5行の文字列配列。各行は5文字。1=塗りつぶし、0=空白
+- color: 3桁Hex (例: F00=赤, 0AF=青, 0F0=緑, FF0=黄, 888=灰, AAA=銀)
+- dots: 5行の配列。各行は5文字の文字列。1=ピクセル塗りつぶし、0=空白
 
 例:
+剣 → {"color":"AAA","dots":["00100","00100","00100","01110","00100"]}
+盾 → {"color":"840","dots":["01110","11111","11111","11111","01110"]}
 ハート → {"color":"F00","dots":["01010","11111","11111","01110","00100"]}
 
-家 → {"color":"840","dots":["00100","01110","01110","01110","11111"]}
-
-剣 → {"color":"AAA","dots":["00100","00100","01110","01110","00100"]}
-
-「%s」:""" % [user_input, user_input]
+「%s」を描いてください:""" % [user_input, user_input]
 
 	print("プロンプト: ", prompt)
-	print("スキーマ: ", schema_string)
+	print("GBNF Grammar設定完了")
 
-	# JSON生成開始
+	# 会話をリセットしてから生成開始
+	chat_node.reset_context()
 	current_json_text = ""
-	llama.run_generate_text(prompt, "", schema_string)
-	print("run_generate_text() 呼び出し完了")
 
-func _on_llm_text_updated(new_text: String):
-	print("LLM更新: '", new_text, "' (長さ: ", new_text.length(), ")")
-	current_json_text += new_text
+	# プロンプトを送信
+	chat_node.say(prompt)
+
+func _on_response_updated(token: String):
+	current_json_text += token
 
 	# リアルタイムでJSON表示
 	json_display.text = "[b]生成中のJSON:[/b]\n\n[code]" + current_json_text + "[/code]"
 
-	# 生成完了チェック
-	if new_text == "":
-		print("生成完了を検知")
-		_on_generation_complete()
-	else:
-		print("現在のJSON長: ", current_json_text.length())
-
-func _on_generation_complete():
+func _on_response_finished(response: String):
 	print("生成完了")
-	print("JSON: ", current_json_text)
+	print("完全なレスポンス: ", response)
+
+	current_json_text = response
 
 	# JSONパース
 	var json_start = current_json_text.find("{")
@@ -153,6 +144,7 @@ func _on_generation_complete():
 		return
 
 	var json_str = current_json_text.substr(json_start, json_end - json_start)
+	print("抽出したJSON: ", json_str)
 
 	var json = JSON.new()
 	var error = json.parse(json_str)
@@ -170,7 +162,7 @@ func _on_generation_complete():
 		# 折り紙を生成
 		create_origami(generated_json_data)
 	else:
-		print("❌ JSONパースエラー")
+		print("❌ JSONパースエラー: ", error)
 		status_label.text = "❌ JSON解析に失敗しました"
 
 	_reset_generation()
@@ -472,18 +464,6 @@ func get_dots_bounds(dots: Array) -> Dictionary:
 		"max_y": max_y + margin
 	}
 
-# 頂点配列をパース
-func parse_vertices(vertices_data: Array) -> PackedVector2Array:
-	var vertices = PackedVector2Array()
-
-	for vertex in vertices_data:
-		if vertex is Array and vertex.size() >= 2:
-			var x = float(vertex[0])
-			var y = float(vertex[1])
-			vertices.append(Vector2(x, y))
-
-	return vertices
-
 # 3桁Hex文字列をColorに変換
 func hex3_to_color(hex: String) -> Color:
 	hex = hex.strip_edges().trim_prefix("#")
@@ -496,123 +476,6 @@ func hex3_to_color(hex: String) -> Color:
 	var b = ("0x" + hex.substr(2, 1) + hex.substr(2, 1)).hex_to_int() / 255.0
 
 	return Color(r, g, b)
-
-# 折り目の線を生成
-func create_fold_lines(shape_name: String) -> Array:
-	var lines = []
-	var size = 80.0
-
-	match shape_name:
-		"三角":
-			# 中心から頂点への線
-			lines.append([Vector2(0, 0), Vector2(0, -size * 0.75)])
-		"四角":
-			# 対角線
-			lines.append([Vector2(-size * 0.5, 0), Vector2(size * 0.5, 0)])
-			lines.append([Vector2(0, -size * 0.7), Vector2(0, size * 0.7)])
-		"五角形", "六角形":
-			# 中心から各頂点への線
-			var n = 5 if shape_name == "五角形" else 6
-			for i in range(n):
-				var angle = -PI/2 + (i * 2 * PI / n)
-				lines.append([Vector2(0, 0), Vector2(cos(angle) * size * 0.6, sin(angle) * size * 0.6)])
-		"円":
-			# 十字の折り目
-			lines.append([Vector2(-size * 0.7, 0), Vector2(size * 0.7, 0)])
-			lines.append([Vector2(0, -size * 0.7), Vector2(0, size * 0.7)])
-		"星":
-			# 中心から内側の頂点への線
-			for i in range(5):
-				var angle = -PI/2 + (i * 2 * PI / 5)
-				lines.append([Vector2(0, 0), Vector2(cos(angle) * size * 0.3, sin(angle) * size * 0.3)])
-
-	return lines
-
-# ハイライト部分（光沢）を生成
-func get_highlight_points(shape_name: String) -> PackedVector2Array:
-	var size = 80.0
-
-	match shape_name:
-		"三角":
-			return PackedVector2Array([
-				Vector2(-10, -size * 0.5),
-				Vector2(10, -size * 0.5),
-				Vector2(5, -size * 0.3),
-				Vector2(-5, -size * 0.3)
-			])
-		"四角":
-			return PackedVector2Array([
-				Vector2(-size * 0.4, -size * 0.7),
-				Vector2(size * 0.2, -size * 0.7),
-				Vector2(size * 0.1, -size * 0.4),
-				Vector2(-size * 0.3, -size * 0.4)
-			])
-		_:
-			# その他の形状は小さな円形のハイライト
-			var points = PackedVector2Array()
-			for i in range(8):
-				var angle = (i * 2 * PI / 8)
-				points.append(Vector2(cos(angle) * 15, sin(angle) * 15 - size * 0.4))
-			return points
-
-func get_origami_color(color_name: String) -> Color:
-	match color_name:
-		"赤": return Color(0.9, 0.2, 0.2)
-		"青": return Color(0.2, 0.5, 0.9)
-		"緑": return Color(0.3, 0.8, 0.3)
-		"黄": return Color(0.95, 0.85, 0.2)
-		"紫": return Color(0.7, 0.3, 0.8)
-		"橙": return Color(0.95, 0.6, 0.2)
-		"白": return Color(0.95, 0.95, 0.95)
-		"黒": return Color(0.2, 0.2, 0.2)
-		"灰": return Color(0.6, 0.6, 0.6)
-		_: return Color(0.8, 0.8, 0.8)
-
-func get_shape_points(shape_name: String) -> PackedVector2Array:
-	var size = 80.0  # サイズを大きく
-
-	match shape_name:
-		"三角":
-			return PackedVector2Array([
-				Vector2(0, -size * 0.75),
-				Vector2(-size * 0.65, size * 0.6),
-				Vector2(size * 0.65, size * 0.6)
-			])
-		"四角":
-			# ひし形風に
-			return PackedVector2Array([
-				Vector2(0, -size),
-				Vector2(size * 0.7, 0),
-				Vector2(0, size),
-				Vector2(-size * 0.7, 0)
-			])
-		"五角形":
-			var points = PackedVector2Array()
-			for i in range(5):
-				var angle = -PI/2 + (i * 2 * PI / 5)
-				points.append(Vector2(cos(angle) * size, sin(angle) * size))
-			return points
-		"六角形":
-			var points = PackedVector2Array()
-			for i in range(6):
-				var angle = -PI/6 + (i * 2 * PI / 6)  # 回転を調整
-				points.append(Vector2(cos(angle) * size, sin(angle) * size))
-			return points
-		"円":
-			var points = PackedVector2Array()
-			for i in range(32):  # より滑らかに
-				var angle = (i * 2 * PI / 32)
-				points.append(Vector2(cos(angle) * size, sin(angle) * size))
-			return points
-		"星":
-			var points = PackedVector2Array()
-			for i in range(10):
-				var angle = -PI/2 + (i * 2 * PI / 10)
-				var radius = size if i % 2 == 0 else size * 0.4
-				points.append(Vector2(cos(angle) * radius, sin(angle) * radius))
-			return points
-		_:
-			return get_shape_points("四角")
 
 func _process(_delta):
 	if Input.is_action_just_pressed("ui_cancel"):
