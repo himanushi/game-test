@@ -16,6 +16,21 @@ var generated_json_data: Dictionary = {}
 var current_json_text: String = ""
 var origami_objects: Array = []
 
+# ファミコン52色のカラーマップ（0-9, a-z, A-P）
+var fc_color_map: Dictionary = {
+	"0": "#ab0013", "1": "#e7005b", "2": "#ff77b7", "3": "#ffc7db", "4": "#a70000",
+	"5": "#db2b00", "6": "#ff7763", "7": "#ffbfb3", "8": "#7f0b00", "9": "#cb4f0f",
+	"a": "#ff9b3b", "b": "#ffdbab", "c": "#432f00", "d": "#8b7300", "e": "#f3bf3f",
+	"f": "#ffe7a3", "g": "#004700", "h": "#009700", "i": "#83d313", "j": "#e3ffa3",
+	"k": "#005100", "l": "#00ab00", "m": "#4fdf4B", "n": "#abf3bf", "o": "#003f17",
+	"p": "#00933b", "q": "#58f898", "r": "#b3ffcf", "s": "#1b3f5f", "t": "#00838b",
+	"u": "#00ebdb", "v": "#9FFFF3", "w": "#271b8f", "x": "#0073ef", "y": "#3fbfff",
+	"z": "#abe7ff", "A": "#0000ab", "B": "#233bef", "C": "#5f73ff", "D": "#c7d7ff",
+	"E": "#47009f", "F": "#8300f3", "G": "#a78Bfd", "H": "#d7cbff", "I": "#8f0077",
+	"J": "#bf00bf", "K": "#f77Bff", "L": "#ffc7ff", "M": "#000000", "N": "#757575",
+	"O": "#bcbcbc", "P": "#ffffff"
+}
+
 func _ready():
 	print("==================================================")
 	print("折り紙パズルゲーム起動 (NobodyWho版)")
@@ -42,7 +57,17 @@ func _ready():
 	chat_node = NobodyWhoChat.new()
 	chat_node.name = "OrigamiChat"
 	chat_node.model_node = model_node
-	chat_node.system_prompt = "You are a creative assistant that generates pixel art patterns in JSON format."
+	chat_node.system_prompt = """You are a creative assistant that generates pixel art patterns in JSON format.
+
+Color Mapping (Famicom 52 colors):
+0=#ab0013, 1=#e7005b, 2=#ff77b7, 3=#ffc7db, 4=#a70000, 5=#db2b00, 6=#ff7763, 7=#ffbfb3, 8=#7f0b00, 9=#cb4f0f
+a=#ff9b3b, b=#ffdbab, c=#432f00, d=#8b7300, e=#f3bf3f, f=#ffe7a3, g=#004700, h=#009700, i=#83d313, j=#e3ffa3
+k=#005100, l=#00ab00, m=#4fdf4B, n=#abf3bf, o=#003f17, p=#00933b, q=#58f898, r=#b3ffcf, s=#1b3f5f, t=#00838b
+u=#00ebdb, v=#9FFFF3, w=#271b8f, x=#0073ef, y=#3fbfff, z=#abe7ff, A=#0000ab, B=#233bef, C=#5f73ff, D=#c7d7ff
+E=#47009f, F=#8300f3, G=#a78Bfd, H=#d7cbff, I=#8f0077, J=#bf00bf, K=#f77Bff, L=#ffc7ff, M=#000000, N=#757575
+O=#bcbcbc, P=#ffffff
+
+Use character '0' for empty/transparent pixels."""
 	add_child(chat_node)
 
 	# シグナル接続
@@ -82,33 +107,36 @@ func _start_generation():
 	print("--------------------------------------------------")
 	print("生成開始: ", user_input)
 
-	# GBNFでJSON形式を定義（5x5ドットパターン）
+	# GBNFでJSON形式を定義（10x10ドットパターン、カテゴリ付き）
 	var gbnf_grammar = """
 root ::= object
-object ::= "{" ws "\\"color\\"" ws ":" ws color ws "," ws "\\"dots\\"" ws ":" ws dots ws "}"
-color ::= "\\"" [0-9A-Fa-f] [0-9A-Fa-f] [0-9A-Fa-f] "\\""
-dots ::= "[" ws row ws "," ws row ws "," ws row ws "," ws row ws "," ws row ws "]"
-row ::= "\\"" [01] [01] [01] [01] [01] "\\""
+object ::= "{" ws "\\"category\\"" ws ":" ws category ws "," ws "\\"dots\\"" ws ":" ws dots ws "}"
+category ::= "\\"武器\\"" | "\\"装備\\"" | "\\"爆発物\\"" | "\\"回復アイテム\\""
+dots ::= "[" ws row ws ("," ws row ws){9} "]"
+row ::= "\\"" char char char char char char char char char char "\\""
+char ::= [0-9a-zA-P]
 ws ::= [ \\t\\n]*
 """
 
 	# Samplerを設定してGrammarを適用
 	var sampler = NobodyWhoSampler.new()
 	sampler.use_grammar = true
+	sampler.gbnf_grammar = gbnf_grammar  # カスタムGBNF文法を設定
 	sampler.temperature = 0.0  # 決定的な出力
 	chat_node.sampler = sampler
 
 	# プロンプトを構築
-	var prompt = """5x5ピクセルアートで「%s」を描いてください。
+	var prompt = """10x10ピクセルアートで「%s」を描いてください。
 
 ルール:
-- color: 3桁Hex (例: F00=赤, 0AF=青, 0F0=緑, FF0=黄, 888=灰, AAA=銀)
-- dots: 5行の配列。各行は5文字の文字列。1=ピクセル塗りつぶし、0=空白
+- category: "武器", "装備", "爆発物", "回復アイテム"のいずれか
+- dots: 10行の配列。各行は10文字の文字列
+- 各文字: '0'=透明/空白, 1-9/a-z/A-P=ファミコン52色
+- 適切な色を使って魅力的なピクセルアートを作成
 
 例:
-剣 → {"color":"AAA","dots":["00100","00100","00100","01110","00100"]}
-盾 → {"color":"840","dots":["01110","11111","11111","11111","01110"]}
-ハート → {"color":"F00","dots":["01010","11111","11111","01110","00100"]}
+剣 → {"category":"武器","dots":["0000PP0000","0000PP0000","0000PP0000","0000PP0000","000PPPP000","00PPPPPP00","000PPPP000","0000NN0000","000NNNN000","0000000000"]}
+ポーション → {"category":"回復アイテム","dots":["0000000000","0000PP0000","000PPPP000","00PP11PP00","00P1111P00","00P1111P00","00PP11PP00","00PPPPPP00","000PPPP000","0000000000"]}
 
 「%s」を描いてください:""" % [user_input, user_input]
 
@@ -196,19 +224,31 @@ func create_origami(data: Dictionary):
 
 	print("配置済みオブジェクト数: ", origami_objects.size())
 
-# ドット数をカウント
+# ファミコン色を取得（文字→Colorオブジェクト）
+func get_fc_color(char: String) -> Color:
+	var hex = fc_color_map.get(char, "#ffffff")
+	return hex_to_color(hex)
+
+# Hex文字列をColorに変換
+func hex_to_color(hex: String) -> Color:
+	hex = hex.strip_edges().trim_prefix("#")
+	if hex.length() != 6:
+		return Color(1.0, 1.0, 1.0)  # デフォルト白
+
+	var r = ("0x" + hex.substr(0, 2)).hex_to_int() / 255.0
+	var g = ("0x" + hex.substr(2, 2)).hex_to_int() / 255.0
+	var b = ("0x" + hex.substr(4, 2)).hex_to_int() / 255.0
+
+	return Color(r, g, b)
+
+# ドット数をカウント（10x10対応）
 func count_active_dots(dots: Array) -> int:
 	var count = 0
 	for row in dots:
 		if row is String:
-			# 文字列形式 "0000110000" の場合
+			# '0'以外はアクティブなドット
 			for i in range(row.length()):
-				if row[i] == "1":
-					count += 1
-		elif row is Array:
-			# 配列形式（後方互換性）
-			for dot in row:
-				if dot:
+				if row[i] != "0":
 					count += 1
 	return count
 
@@ -330,64 +370,59 @@ func create_origami_sprite(data: Dictionary) -> Node2D:
 	sprite_node.linear_damp = 2.0  # 空気抵抗
 	sprite_node.angular_damp = 3.0  # 回転減衰
 
-	# 色を取得（3桁Hex）
-	var color_hex = data.get("color", "AAA")
-	var color = hex3_to_color(color_hex)
-
 	# ドット配列を取得
 	var dots_data = data.get("dots", [])
 
 	# デフォルトドットパターン（データが不正な場合）
-	if dots_data.size() != 5:
+	if dots_data.size() != 10:
 		dots_data = create_default_dots()
 
-	var dot_size = 12.0  # 各ドットのサイズ（5x5なので適度なサイズ）
-	var dot_spacing = 15.0  # ドット間の間隔
-	var offset_x = -30.0  # 中心からのオフセット
-	var offset_y = -30.0
+	var dot_size = 8.0  # 各ドットのサイズ（10x10なので少し小さく）
+	var dot_spacing = 10.0  # ドット間の間隔
+	var offset_x = -45.0  # 中心からのオフセット
+	var offset_y = -45.0
 
 	# 影用のコンテナ
 	var shadow_container = Node2D.new()
-	shadow_container.position = Vector2(4, 4)
+	shadow_container.position = Vector2(3, 3)
 	sprite_node.add_child(shadow_container)
 
 	# メインのドット描画
 	var dots_container = Node2D.new()
 	sprite_node.add_child(dots_container)
 
-	# 5x5のドットを描画
-	for row_idx in range(5):
+	# 10x10のドットを描画
+	for row_idx in range(10):
 		if row_idx >= dots_data.size():
 			break
 		var row = dots_data[row_idx]
 
-		for col_idx in range(5):
-			var should_draw = false
+		for col_idx in range(10):
+			if not (row is String):
+				continue
 
-			# 文字列形式 "0000110000" の場合
-			if row is String:
-				if col_idx < row.length() and row[col_idx] == "1":
-					should_draw = true
-			# 配列形式（後方互換性）
-			elif row is Array:
-				if col_idx < row.size() and row[col_idx]:
-					should_draw = true
+			if col_idx >= row.length():
+				continue
 
-			if should_draw:
-				var x = offset_x + col_idx * dot_spacing
-				var y = offset_y + row_idx * dot_spacing
+			var char = row[col_idx]
 
-				# 影
-				var shadow_dot = create_dot_rect(x, y, dot_size, Color(0, 0, 0, 0.3))
-				shadow_container.add_child(shadow_dot)
+			# '0'は透明（描画しない）
+			if char == "0":
+				continue
 
-				# メインドット
-				var dot = create_dot_rect(x, y, dot_size, color)
-				dots_container.add_child(dot)
+			# ファミコン52色にマッピング
+			var color = get_fc_color(char)
 
-	# ハイライト効果（中央上部に小さな光沢）
-	var highlight = create_dot_rect(offset_x + 20, offset_y + 10, dot_size * 1.5, Color(1, 1, 1, 0.4))
-	dots_container.add_child(highlight)
+			var x = offset_x + col_idx * dot_spacing
+			var y = offset_y + row_idx * dot_spacing
+
+			# 影
+			var shadow_dot = create_dot_rect(x, y, dot_size, Color(0, 0, 0, 0.3))
+			shadow_container.add_child(shadow_dot)
+
+			# メインドット
+			var dot = create_dot_rect(x, y, dot_size, color)
+			dots_container.add_child(dot)
 
 	return sprite_node
 
@@ -399,21 +434,21 @@ func create_dot_rect(x: float, y: float, size: float, color: Color) -> ColorRect
 	rect.color = color
 	return rect
 
-# デフォルトのドットパターン（矩形）
+# デフォルトのドットパターン（10x10矩形、白色）
 func create_default_dots() -> Array:
 	var default_pattern = []
-	for i in range(5):
+	for i in range(10):
 		var row_str = ""
-		for j in range(5):
-			# 外側1マス以外を'1'
-			if i >= 1 and i < 4 and j >= 1 and j < 4:
-				row_str += "1"
+		for j in range(10):
+			# 外側2マス以外を'P'（白）
+			if i >= 2 and i < 8 and j >= 2 and j < 8:
+				row_str += "P"
 			else:
 				row_str += "0"
 		default_pattern.append(row_str)
 	return default_pattern
 
-# ドット配列の外接矩形を取得
+# ドット配列の外接矩形を取得（10x10対応）
 func get_dots_bounds(dots: Array) -> Dictionary:
 	var min_x = INF
 	var max_x = -INF
@@ -427,22 +462,17 @@ func get_dots_bounds(dots: Array) -> Dictionary:
 
 	var found_any = false
 
-	for row_idx in range(min(dots.size(), 5)):
+	for row_idx in range(min(dots.size(), 10)):
 		var row = dots[row_idx]
 
-		for col_idx in range(5):
-			var is_active = false
+		if not (row is String):
+			continue
 
-			# 文字列形式 "0000110000" の場合
-			if row is String:
-				if col_idx < row.length() and row[col_idx] == "1":
-					is_active = true
-			# 配列形式（後方互換性）
-			elif row is Array:
-				if col_idx < row.size() and row[col_idx]:
-					is_active = true
+		for col_idx in range(min(row.length(), 10)):
+			var char = row[col_idx]
 
-			if is_active:
+			# '0'以外はアクティブなドット
+			if char != "0":
 				found_any = true
 				var x = offset_x + col_idx * dot_spacing
 				var y = offset_y + row_idx * dot_spacing
@@ -464,18 +494,6 @@ func get_dots_bounds(dots: Array) -> Dictionary:
 		"max_y": max_y + margin
 	}
 
-# 3桁Hex文字列をColorに変換
-func hex3_to_color(hex: String) -> Color:
-	hex = hex.strip_edges().trim_prefix("#")
-	if hex.length() != 3:
-		return Color(0.8, 0.8, 0.8)  # デフォルト色
-
-	# 3桁Hexを6桁に拡張（F00 -> FF0000）
-	var r = ("0x" + hex.substr(0, 1) + hex.substr(0, 1)).hex_to_int() / 255.0
-	var g = ("0x" + hex.substr(1, 1) + hex.substr(1, 1)).hex_to_int() / 255.0
-	var b = ("0x" + hex.substr(2, 1) + hex.substr(2, 1)).hex_to_int() / 255.0
-
-	return Color(r, g, b)
 
 func _process(_delta):
 	if Input.is_action_just_pressed("ui_cancel"):
