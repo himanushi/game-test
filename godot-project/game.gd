@@ -50,31 +50,29 @@ func _ready():
 	# NobodyWhoModelノードを作成
 	model_node = NobodyWhoModel.new()
 	model_node.name = "OrigamiModel"
-	model_node.model_path = "res://models/gemma-3-12b-it.Q5_K_M.gguf"
+	model_node.model_path = "res://models/gemma-3-4b-it-Q8_0.gguf"
 	add_child(model_node)
 
 	# NobodyWhoChatノードを作成
 	chat_node = NobodyWhoChat.new()
 	chat_node.name = "OrigamiChat"
 	chat_node.model_node = model_node
-	chat_node.system_prompt = """You are a creative assistant that generates 10x10 pixel art using primitive shapes.
+	chat_node.system_prompt = """You are a creative ASCII artist that generates 10x10 pixel art.
 
-Canvas: 10x10 grid (coordinates: x=0-9, y=0-9)
-Origin: Top-left is (0,0)
+Available ASCII characters: space, |, #, @, *, +, =, o, x, ., -
 
 Color Mapping (Famicom 52 colors):
-0=#ab0013(red), 1=#e7005b(pink), 2=#ff77b7, 3=#ffc7db, 4=#a70000, 5=#db2b00(orange), 6=#ff7763, 7=#ffbfb3
-8=#7f0b00(brown), 9=#cb4f0f, a=#ff9b3b, b=#ffdbab, c=#432f00, d=#8b7300(brown), e=#f3bf3f(yellow), f=#ffe7a3
-g=#004700(darkgreen), h=#009700(green), i=#83d313, j=#e3ffa3, k=#005100, l=#00ab00, m=#4fdf4B(green), n=#abf3bf
-o=#003f17, p=#00933b, q=#58f898, r=#b3ffcf, s=#1b3f5f(darkblue), t=#00838b, u=#00ebdb(cyan), v=#9FFFF3
-w=#271b8f(purple), x=#0073ef(blue), y=#3fbfff, z=#abe7ff, A=#0000ab, B=#233bef, C=#5f73ff(blue), D=#c7d7ff
-E=#47009f, F=#8300f3, G=#a78Bfd, H=#d7cbff, I=#8f0077, J=#bf00bf, K=#f77Bff, L=#ffc7ff, M=#000000(black)
-N=#757575(gray), O=#bcbcbc(lightgray), P=#ffffff(white)
+0=#ab0013(red), P=#ffffff(white), N=#757575(gray), d=#8b7300(brown), e=#f3bf3f(yellow),
+h=#009700(green), x=#0073ef(blue), 5=#db2b00(orange), M=#000000(black)
 
-Primitives:
-- rect: {"shape":"rect", "x":X, "y":Y, "w":W, "h":H, "color":"C"}
+Create 10x10 ASCII art, then map characters to colors.
 
-Combine multiple rectangles to create objects."""
+Example usage:
+- "|" for blades (white/silver)
+- "#" for handles (brown)
+- "@" for metal parts (gray)
+- "o" for round objects
+- " " (space) for empty areas"""
 	add_child(chat_node)
 
 	# シグナル接続
@@ -114,17 +112,17 @@ func _start_generation():
 	print("--------------------------------------------------")
 	print("生成開始: ", user_input)
 
-	# GBNFでJSON形式を定義（プリミティブ形式）
+	# GBNFでJSON形式を定義（ASCII Art形式）
 	var gbnf_grammar = """
 root ::= obj
-obj ::= "{" ws "\\"category\\"" ws ":" ws category ws "," ws "\\"primitives\\"" ws ":" ws primitives ws "}"
+obj ::= "{" ws "\\"category\\"" ws ":" ws category ws "," ws "\\"ascii\\"" ws ":" ws ascii ws "," ws "\\"colormap\\"" ws ":" ws colormap ws "}"
 category ::= "\\"武器\\"" | "\\"装備\\"" | "\\"爆発物\\"" | "\\"回復アイテム\\""
-primitives ::= "[" ws prim ws ("," ws prim ws)* "]"
-prim ::= "{" ws "\\"shape\\"" ws ":" ws shape ws "," ws "\\"x\\"" ws ":" ws num ws "," ws "\\"y\\"" ws ":" ws num ws "," ws size ws "," ws "\\"color\\"" ws ":" ws color ws "}"
-shape ::= "\\"rect\\""
-size ::= ("\\"w\\"" ws ":" ws num ws "," ws "\\"h\\"" ws ":" ws num)
-num ::= [0-9]
-color ::= "\\"" [0-9a-zA-P] "\\""
+ascii ::= "[" ws line ws ("," ws line ws){9} "]"
+line ::= "\\"" char10 "\\""
+char10 ::= asciichar asciichar asciichar asciichar asciichar asciichar asciichar asciichar asciichar asciichar
+asciichar ::= [ |#@*+=ox.-]
+colormap ::= "{" ws mapping ws ("," ws mapping ws)* "}"
+mapping ::= "\\"" asciichar "\\"" ws ":" ws "\\"" [0-9a-zA-P] "\\""
 ws ::= [ \\t\\n]*
 """
 
@@ -136,19 +134,18 @@ ws ::= [ \\t\\n]*
 	chat_node.sampler = sampler
 
 	# プロンプトを構築
-	var prompt = """「%s」を10x10の矩形プリミティブで描いてください。
+	var prompt = """「%s」を10x10のASCII Artで描いてください。
 
 ルール:
 - category: "武器", "装備", "爆発物", "回復アイテム"
-- primitives: 矩形のリスト
-  - shape: "rect"
-  - x, y: 位置（0-9）
-  - w, h: 幅と高さ（0-9）
-  - color: ファミコン52色（0-9, a-z, A-P）
+- ascii: 10行の配列（各行10文字）
+- colormap: 文字→色のマッピング
+
+使える文字: space, |, #, @, *, +, =, o, x, ., -
 
 例:
-剣 → {"category":"武器","primitives":[{"shape":"rect","x":4,"y":0,"w":2,"h":6,"color":"P"},{"shape":"rect","x":2,"y":6,"w":6,"h":1,"color":"N"},{"shape":"rect","x":4,"y":7,"w":2,"h":3,"color":"d"}]}
-盾 → {"category":"装備","primitives":[{"shape":"rect","x":2,"y":1,"w":6,"h":7,"color":"d"},{"shape":"rect","x":3,"y":0,"w":4,"h":2,"color":"P"}]}
+剣 → {"category":"武器","ascii":["   ||     ","   ||     ","   ||     ","  ||||    "," |||||| ","  ||||    ","   ##     ","  ####    ","   ##     ","          "],"colormap":{"|":"P","#":"d"," ":"-"}}
+盾 → {"category":"装備","ascii":["   ####   ","  ######  "," ######## "," ######## "," ######## "," ######## "," ######## ","  ######  ","   ####   ","          "],"colormap":{"#":"d"," ":"-"}}
 
 「%s」を描いてください:""" % [user_input, user_input]
 
@@ -213,8 +210,13 @@ func _reset_generation():
 	current_json_text = ""
 
 func create_origami(data: Dictionary):
+	# ASCII Artからドット配列を生成
+	if data.has("ascii"):
+		var dots = generate_dots_from_ascii(data)
+		data["dots"] = dots
+		print("ASCII Artから生成: ascii=", data.get("ascii"))
 	# プリミティブからドット配列を生成
-	if data.has("primitives"):
+	elif data.has("primitives"):
 		var dots = generate_dots_from_primitives(data)
 		data["dots"] = dots
 		print("プリミティブから生成: primitives=", data.get("primitives"))
@@ -517,6 +519,39 @@ func get_dots_bounds(dots: Array) -> Dictionary:
 		"max_y": max_y + margin
 	}
 
+
+# ========================================
+# ASCII Artからドット配列を生成
+# ========================================
+
+# ASCII Artデータからドット配列を生成
+func generate_dots_from_ascii(data: Dictionary) -> Array:
+	var ascii_lines = data.get("ascii", [])
+	var color_map = data.get("colormap", {})
+	var dots = []
+
+	for line in ascii_lines:
+		if not (line is String):
+			dots.append("----------")
+			continue
+
+		var dot_line = ""
+		for i in range(min(10, line.length())):
+			var char = line[i]
+			var color = color_map.get(char, "-")
+			dot_line += color
+
+		# 10文字に満たない場合は'-'で埋める
+		while dot_line.length() < 10:
+			dot_line += "-"
+
+		dots.append(dot_line)
+
+	# 10行に満たない場合は空行で埋める
+	while dots.size() < 10:
+		dots.append("----------")
+
+	return dots
 
 # ========================================
 # プリミティブからドット配列を生成
