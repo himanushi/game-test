@@ -50,7 +50,7 @@ func _ready():
 	# NobodyWhoModelノードを作成
 	model_node = NobodyWhoModel.new()
 	model_node.name = "OrigamiModel"
-	model_node.model_path = "res://models/gemma-3-1b-it.fp16.gguf"
+	model_node.model_path = "res://models/gemma-3-12b-it.Q5_K_M.gguf"
 	add_child(model_node)
 
 	# NobodyWhoChatノードを作成
@@ -67,7 +67,7 @@ u=#00ebdb, v=#9FFFF3, w=#271b8f, x=#0073ef, y=#3fbfff, z=#abe7ff, A=#0000ab, B=#
 E=#47009f, F=#8300f3, G=#a78Bfd, H=#d7cbff, I=#8f0077, J=#bf00bf, K=#f77Bff, L=#ffc7ff, M=#000000, N=#757575
 O=#bcbcbc, P=#ffffff
 
-Use character '0' for empty/transparent pixels."""
+Use character '-' (hyphen) for empty/transparent pixels."""
 	add_child(chat_node)
 
 	# シグナル接続
@@ -114,7 +114,7 @@ object ::= "{" ws "\\"category\\"" ws ":" ws category ws "," ws "\\"dots\\"" ws 
 category ::= "\\"武器\\"" | "\\"装備\\"" | "\\"爆発物\\"" | "\\"回復アイテム\\""
 dots ::= "[" ws row ws ("," ws row ws){9} "]"
 row ::= "\\"" char char char char char char char char char char "\\""
-char ::= [0-9a-zA-P]
+char ::= [-0-9a-zA-P]
 ws ::= [ \\t\\n]*
 """
 
@@ -131,12 +131,12 @@ ws ::= [ \\t\\n]*
 ルール:
 - category: "武器", "装備", "爆発物", "回復アイテム"のいずれか
 - dots: 10行の配列。各行は10文字の文字列
-- 各文字: '0'=透明/空白, 1-9/a-z/A-P=ファミコン52色
+- 各文字: '-'=透明/空白, 0-9/a-z/A-P=ファミコン52色
 - 適切な色を使って魅力的なピクセルアートを作成
 
 例:
-剣 → {"category":"武器","dots":["0000PP0000","0000PP0000","0000PP0000","0000PP0000","000PPPP000","00PPPPPP00","000PPPP000","0000NN0000","000NNNN000","0000000000"]}
-ポーション → {"category":"回復アイテム","dots":["0000000000","0000PP0000","000PPPP000","00PP11PP00","00P1111P00","00P1111P00","00PP11PP00","00PPPPPP00","000PPPP000","0000000000"]}
+剣 → {"category":"武器","dots":["----PP----","----PP----","----PP----","----PP----","---PPPP---","--PPPPPP--","---PPPP---","----NN----","---NNNN---","----------"]}
+ポーション → {"category":"回復アイテム","dots":["----------","----PP----","---PPPP---","--PP11PP--","--P1111P--","--P1111P--","--PP11PP--","--PPPPPP--","---PPPP---","----------"]}
 
 「%s」を描いてください:""" % [user_input, user_input]
 
@@ -246,9 +246,9 @@ func count_active_dots(dots: Array) -> int:
 	var count = 0
 	for row in dots:
 		if row is String:
-			# '0'以外はアクティブなドット
+			# '-'以外はアクティブなドット
 			for i in range(row.length()):
-				if row[i] != "0":
+				if row[i] != "-":
 					count += 1
 	return count
 
@@ -406,8 +406,8 @@ func create_origami_sprite(data: Dictionary) -> Node2D:
 
 			var char = row[col_idx]
 
-			# '0'は透明（描画しない）
-			if char == "0":
+			# '-'は透明（描画しない）
+			if char == "-":
 				continue
 
 			# ファミコン52色にマッピング
@@ -444,7 +444,7 @@ func create_default_dots() -> Array:
 			if i >= 2 and i < 8 and j >= 2 and j < 8:
 				row_str += "P"
 			else:
-				row_str += "0"
+				row_str += "-"
 		default_pattern.append(row_str)
 	return default_pattern
 
@@ -471,8 +471,8 @@ func get_dots_bounds(dots: Array) -> Dictionary:
 		for col_idx in range(min(row.length(), 10)):
 			var char = row[col_idx]
 
-			# '0'以外はアクティブなドット
-			if char != "0":
+			# '-'以外はアクティブなドット
+			if char != "-":
 				found_any = true
 				var x = offset_x + col_idx * dot_spacing
 				var y = offset_y + row_idx * dot_spacing
