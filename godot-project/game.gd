@@ -57,7 +57,7 @@ func _ready():
 	chat_node = NobodyWhoChat.new()
 	chat_node.name = "OrigamiChat"
 	chat_node.model_node = model_node
-	chat_node.system_prompt = """You are a creative assistant that generates pixel art patterns in JSON format.
+	chat_node.system_prompt = """You are a creative assistant that generates structured object descriptions for 10x10 pixel art.
 
 Color Mapping (Famicom 52 colors):
 0=#ab0013, 1=#e7005b, 2=#ff77b7, 3=#ffc7db, 4=#a70000, 5=#db2b00, 6=#ff7763, 7=#ffbfb3, 8=#7f0b00, 9=#cb4f0f
@@ -67,7 +67,16 @@ u=#00ebdb, v=#9FFFF3, w=#271b8f, x=#0073ef, y=#3fbfff, z=#abe7ff, A=#0000ab, B=#
 E=#47009f, F=#8300f3, G=#a78Bfd, H=#d7cbff, I=#8f0077, J=#bf00bf, K=#f77Bff, L=#ffc7ff, M=#000000, N=#757575
 O=#bcbcbc, P=#ffffff
 
-Use character '-' (hyphen) for empty/transparent pixels."""
+Component Types:
+- blade: Vertical element (length, width, color)
+- crossguard: Horizontal bar (width, height, color)
+- handle: Grip area (length, width, color)
+- head: Top part (width, height, color)
+- shaft: Vertical rod (length, width, color)
+- body: Main area (width, height, color)
+- top/bottom/left/right: Directional parts
+
+Describe objects using components, not pixel grids."""
 	add_child(chat_node)
 
 	# シグナル接続
@@ -107,14 +116,20 @@ func _start_generation():
 	print("--------------------------------------------------")
 	print("生成開始: ", user_input)
 
-	# GBNFでJSON形式を定義（10x10ドットパターン、カテゴリ付き）
+	# GBNFでJSON形式を定義（構造的記述形式）
 	var gbnf_grammar = """
-root ::= object
-object ::= "{" ws "\\"category\\"" ws ":" ws category ws "," ws "\\"dots\\"" ws ":" ws dots ws "}"
+root ::= obj
+obj ::= "{" ws "\\"category\\"" ws ":" ws category ws "," ws "\\"type\\"" ws ":" ws objtype ws "," ws "\\"components\\"" ws ":" ws components ws "}"
 category ::= "\\"武器\\"" | "\\"装備\\"" | "\\"爆発物\\"" | "\\"回復アイテム\\""
-dots ::= "[" ws row ws ("," ws row ws){9} "]"
-row ::= "\\"" char char char char char char char char char char "\\""
-char ::= [-0-9a-zA-P]
+objtype ::= "\\"" [a-z_]+ "\\""
+components ::= "[" ws comp ws ("," ws comp ws)* "]"
+comp ::= "{" ws "\\"type\\"" ws ":" ws comptype ws ("," ws param ws)+ "}"
+comptype ::= "\\"blade\\"" | "\\"crossguard\\"" | "\\"handle\\"" | "\\"head\\"" | "\\"shaft\\"" | "\\"body\\"" | "\\"top\\"" | "\\"bottom\\"" | "\\"left\\"" | "\\"right\\""
+param ::= (lengthparam | widthparam | heightparam | colorparam)
+lengthparam ::= "\\"length\\"" ws ":" ws [1-9]
+widthparam ::= "\\"width\\"" ws ":" ws [1-9]
+heightparam ::= "\\"height\\"" ws ":" ws [1-9]
+colorparam ::= "\\"color\\"" ws ":" ws "\\"" [0-9a-zA-P] "\\""
 ws ::= [ \\t\\n]*
 """
 
@@ -126,19 +141,22 @@ ws ::= [ \\t\\n]*
 	chat_node.sampler = sampler
 
 	# プロンプトを構築
-	var prompt = """10x10ピクセルアートで「%s」を描いてください。
+	var prompt = """「%s」を構造的に記述してください。
 
 ルール:
-- category: "武器", "装備", "爆発物", "回復アイテム"のいずれか
-- dots: 10行の配列。各行は10文字の文字列
-- 各文字: '-'=透明/空白, 0-9/a-z/A-P=ファミコン52色
-- 適切な色を使って魅力的なピクセルアートを作成
+- category: "武器", "装備", "爆発物", "回復アイテム"
+- type: オブジェクトの種類（例: "sword", "axe", "shield"）
+- components: パーツのリスト
+  - type: パーツの種類
+  - length/width/height: サイズ（1-9）
+  - color: ファミコン52色（0-9, a-z, A-P）
 
 例:
-剣 → {"category":"武器","dots":["----PP----","----PP----","----PP----","----PP----","---PPPP---","--PPPPPP--","---PPPP---","----NN----","---NNNN---","----------"]}
-ポーション → {"category":"回復アイテム","dots":["----------","----PP----","---PPPP---","--PP11PP--","--P1111P--","--P1111P--","--PP11PP--","--PPPPPP--","---PPPP---","----------"]}
+剣 → {"category":"武器","type":"sword","components":[{"type":"blade","length":7,"width":1,"color":"P"},{"type":"crossguard","width":5,"height":1,"color":"N"},{"type":"handle","length":2,"width":1,"color":"d"}]}
+斧 → {"category":"武器","type":"axe","components":[{"type":"head","width":6,"height":3,"color":"N"},{"type":"shaft","length":6,"width":1,"color":"d"}]}
+盾 → {"category":"装備","type":"shield","components":[{"type":"body","width":6,"height":7,"color":"d"},{"type":"top","width":4,"height":2,"color":"P"}]}
 
-「%s」を描いてください:""" % [user_input, user_input]
+「%s」を記述してください:""" % [user_input, user_input]
 
 	print("プロンプト: ", prompt)
 	print("GBNF Grammar設定完了")
@@ -201,8 +219,14 @@ func _reset_generation():
 	current_json_text = ""
 
 func create_origami(data: Dictionary):
+	# 構造的記述からドット配列を生成
+	if data.has("components"):
+		var dots = generate_dots_from_structure(data)
+		data["dots"] = dots  # dotsフィールドを追加
+		print("構造的記述から生成: components=", data.get("components"))
+
 	var dots_count = count_active_dots(data.get("dots", []))
-	print("折り紙を生成: ドット数=", dots_count, ", 色=", data.get("color", "AAA"))
+	print("折り紙を生成: ドット数=", dots_count)
 
 	# 新しい折り紙ノードを作成
 	var origami = create_origami_sprite(data)
@@ -494,6 +518,132 @@ func get_dots_bounds(dots: Array) -> Dictionary:
 		"max_y": max_y + margin
 	}
 
+
+# ========================================
+# 構造的記述からドット配列を生成
+# ========================================
+
+# 構造データからドット配列を生成（メイン関数）
+func generate_dots_from_structure(data: Dictionary) -> Array:
+	var dots = init_empty_dots()
+	var components = data.get("components", [])
+
+	var y_offset = 0
+	for comp in components:
+		draw_component(dots, comp, y_offset)
+		# 次のコンポーネントのためにY位置を進める
+		var comp_height = comp.get("height", comp.get("length", 1))
+		y_offset += comp_height
+
+	return dots
+
+# 空の10x10ドット配列を初期化
+func init_empty_dots() -> Array:
+	var dots = []
+	for i in range(10):
+		dots.append("----------")
+	return dots
+
+# コンポーネントを描画
+func draw_component(dots: Array, comp: Dictionary, y_start: int):
+	var comp_type = comp.get("type", "")
+	var color = comp.get("color", "P")
+
+	match comp_type:
+		"blade":
+			draw_blade(dots, comp, y_start, color)
+		"crossguard":
+			draw_crossguard(dots, comp, y_start, color)
+		"handle":
+			draw_handle(dots, comp, y_start, color)
+		"head":
+			draw_head(dots, comp, y_start, color)
+		"shaft":
+			draw_shaft(dots, comp, y_start, color)
+		"body":
+			draw_body(dots, comp, y_start, color)
+		"top", "bottom":
+			draw_horizontal_bar(dots, comp, y_start, color)
+		"left", "right":
+			draw_vertical_bar(dots, comp, y_start, color)
+
+# 刃を描画（中央の縦長矩形）
+func draw_blade(dots: Array, comp: Dictionary, y_start: int, color: String):
+	var length = comp.get("length", 5)
+	var width = comp.get("width", 1)
+	var x_center = 5 - int(width / 2.0)
+
+	for y in range(min(length, 10 - y_start)):
+		if y_start + y >= 10:
+			break
+		var row = dots[y_start + y]
+		row = set_dots_in_row(row, x_center, width, color)
+		dots[y_start + y] = row
+
+# 鍔を描画（横長バー）
+func draw_crossguard(dots: Array, comp: Dictionary, y_start: int, color: String):
+	var width = comp.get("width", 5)
+	var height = comp.get("height", 1)
+	var x_start = 5 - int(width / 2.0)
+
+	for y in range(min(height, 10 - y_start)):
+		if y_start + y >= 10:
+			break
+		var row = dots[y_start + y]
+		row = set_dots_in_row(row, x_start, width, color)
+		dots[y_start + y] = row
+
+# 柄を描画
+func draw_handle(dots: Array, comp: Dictionary, y_start: int, color: String):
+	var length = comp.get("length", 2)
+	var width = comp.get("width", 2)
+	var x_center = 5 - int(width / 2.0)
+
+	for y in range(min(length, 10 - y_start)):
+		if y_start + y >= 10:
+			break
+		var row = dots[y_start + y]
+		row = set_dots_in_row(row, x_center, width, color)
+		dots[y_start + y] = row
+
+# 頭部を描画（斧の刃など）
+func draw_head(dots: Array, comp: Dictionary, y_start: int, color: String):
+	var width = comp.get("width", 4)
+	var height = comp.get("height", 3)
+	var x_start = 5 - int(width / 2.0)
+
+	for y in range(min(height, 10 - y_start)):
+		if y_start + y >= 10:
+			break
+		var row = dots[y_start + y]
+		row = set_dots_in_row(row, x_start, width, color)
+		dots[y_start + y] = row
+
+# 軸を描画（槍の柄など）
+func draw_shaft(dots: Array, comp: Dictionary, y_start: int, color: String):
+	draw_blade(dots, comp, y_start, color)  # 刃と同じロジック
+
+# 本体を描画
+func draw_body(dots: Array, comp: Dictionary, y_start: int, color: String):
+	draw_head(dots, comp, y_start, color)  # 頭部と同じロジック
+
+# 横バーを描画
+func draw_horizontal_bar(dots: Array, comp: Dictionary, y_start: int, color: String):
+	draw_crossguard(dots, comp, y_start, color)
+
+# 縦バーを描画
+func draw_vertical_bar(dots: Array, comp: Dictionary, y_start: int, color: String):
+	draw_blade(dots, comp, y_start, color)
+
+# 行の指定範囲にドットを設定
+func set_dots_in_row(row: String, x_start: int, width: int, color: String) -> String:
+	var chars = []
+	for i in range(10):
+		if i >= x_start and i < x_start + width:
+			chars.append(color)
+		else:
+			chars.append(row[i] if i < row.length() else "-")
+	return "".join(chars)
 
 func _process(_delta):
 	if Input.is_action_just_pressed("ui_cancel"):
