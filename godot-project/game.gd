@@ -57,26 +57,24 @@ func _ready():
 	chat_node = NobodyWhoChat.new()
 	chat_node.name = "OrigamiChat"
 	chat_node.model_node = model_node
-	chat_node.system_prompt = """You are a creative assistant that generates structured object descriptions for 10x10 pixel art.
+	chat_node.system_prompt = """You are a creative assistant that generates 10x10 pixel art using primitive shapes.
+
+Canvas: 10x10 grid (coordinates: x=0-9, y=0-9)
+Origin: Top-left is (0,0)
 
 Color Mapping (Famicom 52 colors):
-0=#ab0013, 1=#e7005b, 2=#ff77b7, 3=#ffc7db, 4=#a70000, 5=#db2b00, 6=#ff7763, 7=#ffbfb3, 8=#7f0b00, 9=#cb4f0f
-a=#ff9b3b, b=#ffdbab, c=#432f00, d=#8b7300, e=#f3bf3f, f=#ffe7a3, g=#004700, h=#009700, i=#83d313, j=#e3ffa3
-k=#005100, l=#00ab00, m=#4fdf4B, n=#abf3bf, o=#003f17, p=#00933b, q=#58f898, r=#b3ffcf, s=#1b3f5f, t=#00838b
-u=#00ebdb, v=#9FFFF3, w=#271b8f, x=#0073ef, y=#3fbfff, z=#abe7ff, A=#0000ab, B=#233bef, C=#5f73ff, D=#c7d7ff
-E=#47009f, F=#8300f3, G=#a78Bfd, H=#d7cbff, I=#8f0077, J=#bf00bf, K=#f77Bff, L=#ffc7ff, M=#000000, N=#757575
-O=#bcbcbc, P=#ffffff
+0=#ab0013(red), 1=#e7005b(pink), 2=#ff77b7, 3=#ffc7db, 4=#a70000, 5=#db2b00(orange), 6=#ff7763, 7=#ffbfb3
+8=#7f0b00(brown), 9=#cb4f0f, a=#ff9b3b, b=#ffdbab, c=#432f00, d=#8b7300(brown), e=#f3bf3f(yellow), f=#ffe7a3
+g=#004700(darkgreen), h=#009700(green), i=#83d313, j=#e3ffa3, k=#005100, l=#00ab00, m=#4fdf4B(green), n=#abf3bf
+o=#003f17, p=#00933b, q=#58f898, r=#b3ffcf, s=#1b3f5f(darkblue), t=#00838b, u=#00ebdb(cyan), v=#9FFFF3
+w=#271b8f(purple), x=#0073ef(blue), y=#3fbfff, z=#abe7ff, A=#0000ab, B=#233bef, C=#5f73ff(blue), D=#c7d7ff
+E=#47009f, F=#8300f3, G=#a78Bfd, H=#d7cbff, I=#8f0077, J=#bf00bf, K=#f77Bff, L=#ffc7ff, M=#000000(black)
+N=#757575(gray), O=#bcbcbc(lightgray), P=#ffffff(white)
 
-Component Types:
-- blade: Vertical element (length, width, color)
-- crossguard: Horizontal bar (width, height, color)
-- handle: Grip area (length, width, color)
-- head: Top part (width, height, color)
-- shaft: Vertical rod (length, width, color)
-- body: Main area (width, height, color)
-- top/bottom/left/right: Directional parts
+Primitives:
+- rect: {"shape":"rect", "x":X, "y":Y, "w":W, "h":H, "color":"C"}
 
-Describe objects using components, not pixel grids."""
+Combine multiple rectangles to create objects."""
 	add_child(chat_node)
 
 	# シグナル接続
@@ -116,20 +114,17 @@ func _start_generation():
 	print("--------------------------------------------------")
 	print("生成開始: ", user_input)
 
-	# GBNFでJSON形式を定義（構造的記述形式）
+	# GBNFでJSON形式を定義（プリミティブ形式）
 	var gbnf_grammar = """
 root ::= obj
-obj ::= "{" ws "\\"category\\"" ws ":" ws category ws "," ws "\\"type\\"" ws ":" ws objtype ws "," ws "\\"components\\"" ws ":" ws components ws "}"
+obj ::= "{" ws "\\"category\\"" ws ":" ws category ws "," ws "\\"primitives\\"" ws ":" ws primitives ws "}"
 category ::= "\\"武器\\"" | "\\"装備\\"" | "\\"爆発物\\"" | "\\"回復アイテム\\""
-objtype ::= "\\"" [a-z_]+ "\\""
-components ::= "[" ws comp ws ("," ws comp ws)* "]"
-comp ::= "{" ws "\\"type\\"" ws ":" ws comptype ws ("," ws param ws)+ "}"
-comptype ::= "\\"blade\\"" | "\\"crossguard\\"" | "\\"handle\\"" | "\\"head\\"" | "\\"shaft\\"" | "\\"body\\"" | "\\"top\\"" | "\\"bottom\\"" | "\\"left\\"" | "\\"right\\""
-param ::= (lengthparam | widthparam | heightparam | colorparam)
-lengthparam ::= "\\"length\\"" ws ":" ws [1-9]
-widthparam ::= "\\"width\\"" ws ":" ws [1-9]
-heightparam ::= "\\"height\\"" ws ":" ws [1-9]
-colorparam ::= "\\"color\\"" ws ":" ws "\\"" [0-9a-zA-P] "\\""
+primitives ::= "[" ws prim ws ("," ws prim ws)* "]"
+prim ::= "{" ws "\\"shape\\"" ws ":" ws shape ws "," ws "\\"x\\"" ws ":" ws num ws "," ws "\\"y\\"" ws ":" ws num ws "," ws size ws "," ws "\\"color\\"" ws ":" ws color ws "}"
+shape ::= "\\"rect\\""
+size ::= ("\\"w\\"" ws ":" ws num ws "," ws "\\"h\\"" ws ":" ws num)
+num ::= [0-9]
+color ::= "\\"" [0-9a-zA-P] "\\""
 ws ::= [ \\t\\n]*
 """
 
@@ -141,22 +136,21 @@ ws ::= [ \\t\\n]*
 	chat_node.sampler = sampler
 
 	# プロンプトを構築
-	var prompt = """「%s」を構造的に記述してください。
+	var prompt = """「%s」を10x10の矩形プリミティブで描いてください。
 
 ルール:
 - category: "武器", "装備", "爆発物", "回復アイテム"
-- type: オブジェクトの種類（例: "sword", "axe", "shield"）
-- components: パーツのリスト
-  - type: パーツの種類
-  - length/width/height: サイズ（1-9）
+- primitives: 矩形のリスト
+  - shape: "rect"
+  - x, y: 位置（0-9）
+  - w, h: 幅と高さ（0-9）
   - color: ファミコン52色（0-9, a-z, A-P）
 
 例:
-剣 → {"category":"武器","type":"sword","components":[{"type":"blade","length":7,"width":1,"color":"P"},{"type":"crossguard","width":5,"height":1,"color":"N"},{"type":"handle","length":2,"width":1,"color":"d"}]}
-斧 → {"category":"武器","type":"axe","components":[{"type":"head","width":6,"height":3,"color":"N"},{"type":"shaft","length":6,"width":1,"color":"d"}]}
-盾 → {"category":"装備","type":"shield","components":[{"type":"body","width":6,"height":7,"color":"d"},{"type":"top","width":4,"height":2,"color":"P"}]}
+剣 → {"category":"武器","primitives":[{"shape":"rect","x":4,"y":0,"w":2,"h":6,"color":"P"},{"shape":"rect","x":2,"y":6,"w":6,"h":1,"color":"N"},{"shape":"rect","x":4,"y":7,"w":2,"h":3,"color":"d"}]}
+盾 → {"category":"装備","primitives":[{"shape":"rect","x":2,"y":1,"w":6,"h":7,"color":"d"},{"shape":"rect","x":3,"y":0,"w":4,"h":2,"color":"P"}]}
 
-「%s」を記述してください:""" % [user_input, user_input]
+「%s」を描いてください:""" % [user_input, user_input]
 
 	print("プロンプト: ", prompt)
 	print("GBNF Grammar設定完了")
@@ -219,10 +213,15 @@ func _reset_generation():
 	current_json_text = ""
 
 func create_origami(data: Dictionary):
+	# プリミティブからドット配列を生成
+	if data.has("primitives"):
+		var dots = generate_dots_from_primitives(data)
+		data["dots"] = dots
+		print("プリミティブから生成: primitives=", data.get("primitives"))
 	# 構造的記述からドット配列を生成
-	if data.has("components"):
+	elif data.has("components"):
 		var dots = generate_dots_from_structure(data)
-		data["dots"] = dots  # dotsフィールドを追加
+		data["dots"] = dots
 		print("構造的記述から生成: components=", data.get("components"))
 
 	var dots_count = count_active_dots(data.get("dots", []))
@@ -518,6 +517,52 @@ func get_dots_bounds(dots: Array) -> Dictionary:
 		"max_y": max_y + margin
 	}
 
+
+# ========================================
+# プリミティブからドット配列を生成
+# ========================================
+
+# プリミティブデータからドット配列を生成
+func generate_dots_from_primitives(data: Dictionary) -> Array:
+	var dots = init_empty_dots()
+	var primitives = data.get("primitives", [])
+
+	for prim in primitives:
+		draw_prim(dots, prim)
+
+	return dots
+
+# プリミティブを描画
+func draw_prim(dots: Array, prim: Dictionary):
+	var shape = prim.get("shape", "rect")
+
+	match shape:
+		"rect":
+			draw_rect_prim(dots, prim)
+
+# 矩形プリミティブを描画
+func draw_rect_prim(dots: Array, prim: Dictionary):
+	var x = prim.get("x", 0)
+	var y = prim.get("y", 0)
+	var w = prim.get("w", 1)
+	var h = prim.get("h", 1)
+	var color = prim.get("color", "P")
+
+	for dy in range(h):
+		var row_idx = y + dy
+		if row_idx < 0 or row_idx >= 10:
+			continue
+
+		var row = dots[row_idx]
+		var chars = []
+
+		for i in range(10):
+			if i >= x and i < x + w:
+				chars.append(color)
+			else:
+				chars.append(row[i] if i < row.length() else "-")
+
+		dots[row_idx] = "".join(chars)
 
 # ========================================
 # 構造的記述からドット配列を生成
