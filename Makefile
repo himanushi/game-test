@@ -8,13 +8,14 @@ PROJECT_FILE = $(PROJECT_DIR)/project.godot
 # Godot実行ファイル
 GODOT = godot
 
-.PHONY: help start import edit clean build export-mac export-linux export-windows
+.PHONY: help start import edit clean build export-mac export-linux export-windows test-particles
 
 # デフォルトターゲット：ヘルプを表示
 help:
 	@echo "Scribble LLM Game - 利用可能なコマンド:"
 	@echo ""
 	@echo "  make start          - ゲームを起動（自動的にimport実行）"
+	@echo "  make test-particles - パーティクルエフェクトテストを起動"
 	@echo "  make import         - リソースを再インポート"
 	@echo "  make edit           - Godotエディタでプロジェクトを開く"
 	@echo "  make clean          - キャッシュと一時ファイルをクリーン"
@@ -33,6 +34,14 @@ start:
 	@echo "🎮 ゲームを起動しています..."
 	@echo "（初回起動時や.godotが無い場合、自動的にリソースをインポートします）"
 	$(GODOT) --path $(PROJECT_DIR)
+
+# パーティクルエフェクトテストを起動
+test-particles:
+	@echo "✨ パーティクルエフェクトテストを起動しています..."
+	@echo "1-5キー: 各エフェクト発射"
+	@echo "6キー: 全エフェクト一斉発射"
+	@echo "クリック: エフェクト発射"
+	$(GODOT) --path $(PROJECT_DIR) res://particle_test.tscn
 
 # Godotエディタで開く
 edit:
